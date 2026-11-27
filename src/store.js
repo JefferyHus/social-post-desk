@@ -71,6 +71,10 @@ export function openStore({ filename, key }) {
       project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
       property_id TEXT NOT NULL, token_nonce BLOB NOT NULL, token_ciphertext BLOB NOT NULL, token_tag BLOB NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS gsc_connections (
+      project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+      site_url TEXT NOT NULL, token_nonce BLOB NOT NULL, token_ciphertext BLOB NOT NULL, token_tag BLOB NOT NULL
+    );
     CREATE INDEX IF NOT EXISTS drafts_project_created ON drafts(project_id, created_at DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS drafts_project_published_url ON drafts(project_id, post_url) WHERE post_url IS NOT NULL;
   `);
@@ -180,13 +184,13 @@ export function openStore({ filename, key }) {
     updateProject(id, { name, organizationId }) {
       return tx(() => {
         const p = needProject(id);
-        const nextId = organizationId === undefined ? p.organization_id : organizationId;
-        if (p.organization_locked && nextId !== p.organization_id) throw new StoreError(409);
-        stmt("UPDATE projects SET name = ?, organization_id = ? WHERE id = ?").run(
-          name === undefined ? p.name : name,
-          nextId,
-          id,
-        );
+        const nextId =
+          organizationId === undefined ? p.organization_id : organizationId;
+        if (p.organization_locked && nextId !== p.organization_id)
+          throw new StoreError(409);
+        stmt(
+          "UPDATE projects SET name = ?, organization_id = ? WHERE id = ?",
+        ).run(name === undefined ? p.name : name, nextId, id);
         return project(needProject(id));
       });
     },
@@ -195,8 +199,12 @@ export function openStore({ filename, key }) {
         const p = needProject(id);
         if (p.organization_id !== null && p.organization_id !== details.id)
           throw new StoreError(409);
-        if (typeof details.id !== "string" || !details.id) throw new StoreError(409);
-        if (details.expiresAt != null && !Number.isFinite(Date.parse(details.expiresAt)))
+        if (typeof details.id !== "string" || !details.id)
+          throw new StoreError(409);
+        if (
+          details.expiresAt != null &&
+          !Number.isFinite(Date.parse(details.expiresAt))
+        )
           throw new StoreError(409);
         if (typeof details.accessToken !== "string" || !details.accessToken)
           throw new StoreError(409);
@@ -238,37 +246,136 @@ export function openStore({ filename, key }) {
     },
     getGa4Connection(id) {
       needProject(id);
-      const row = stmt("SELECT property_id FROM ga4_connections WHERE project_id=?").get(id);
+      const row = stmt(
+        "SELECT property_id FROM ga4_connections WHERE project_id=?",
+      ).get(id);
       return row ? { propertyId: row.property_id } : null;
     },
     getGa4RefreshToken(id) {
       needProject(id);
-      const row = stmt("SELECT * FROM ga4_connections WHERE project_id=?").get(id);
+      const row = stmt("SELECT * FROM ga4_connections WHERE project_id=?").get(
+        id,
+      );
       if (!row) return null;
       try {
-        const decipher = createDecipheriv("aes-256-gcm", secret, row.token_nonce);
-        decipher.setAAD(Buffer.from(JSON.stringify(["ga4", id, row.property_id])));
+        const decipher = createDecipheriv(
+          "aes-256-gcm",
+          secret,
+          row.token_nonce,
+        );
+        decipher.setAAD(
+          Buffer.from(JSON.stringify(["ga4", id, row.property_id])),
+        );
         decipher.setAuthTag(row.token_tag);
-        return Buffer.concat([decipher.update(row.token_ciphertext), decipher.final()]).toString("utf8");
-      } catch { throw new Error("Unable to decrypt stored credentials"); }
+        return Buffer.concat([
+          decipher.update(row.token_ciphertext),
+          decipher.final(),
+        ]).toString("utf8");
+      } catch {
+        throw new Error("Unable to decrypt stored credentials");
+      }
     },
     setGa4Connection(id, { propertyId, refreshToken }) {
       return tx(() => {
         needProject(id);
-        if (typeof propertyId !== "string" || !/^[1-9]\d{0,19}$/.test(propertyId) || typeof refreshToken !== "string" || !refreshToken) throw new StoreError(409);
-        const nonce = randomBytes(12), cipher = createCipheriv("aes-256-gcm", secret, nonce);
+        if (
+          typeof propertyId !== "string" ||
+          !/^[1-9]\d{0,19}$/.test(propertyId) ||
+          typeof refreshToken !== "string" ||
+          !refreshToken
+        )
+          throw new StoreError(409);
+        const nonce = randomBytes(12),
+          cipher = createCipheriv("aes-256-gcm", secret, nonce);
         cipher.setAAD(Buffer.from(JSON.stringify(["ga4", id, propertyId])));
-        const ciphertext = Buffer.concat([cipher.update(refreshToken, "utf8"), cipher.final()]);
+        const ciphertext = Buffer.concat([
+          cipher.update(refreshToken, "utf8"),
+          cipher.final(),
+        ]);
         stmt(`INSERT INTO ga4_connections(project_id,property_id,token_nonce,token_ciphertext,token_tag) VALUES (?,?,?,?,?)
           ON CONFLICT(project_id) DO UPDATE SET property_id=excluded.property_id, token_nonce=excluded.token_nonce,
-          token_ciphertext=excluded.token_ciphertext,token_tag=excluded.token_tag`).run(id, propertyId, nonce, ciphertext, cipher.getAuthTag());
+          token_ciphertext=excluded.token_ciphertext,token_tag=excluded.token_tag`).run(
+          id,
+          propertyId,
+          nonce,
+          ciphertext,
+          cipher.getAuthTag(),
+        );
         return { propertyId };
       });
     },
-    disconnectGa4(id) { needProject(id); stmt("DELETE FROM ga4_connections WHERE project_id=?").run(id); },
+    disconnectGa4(id) {
+      needProject(id);
+      stmt("DELETE FROM ga4_connections WHERE project_id=?").run(id);
+    },
+    getGscConnection(id) {
+      needProject(id);
+      const row = stmt(
+        "SELECT site_url FROM gsc_connections WHERE project_id=?",
+      ).get(id);
+      return row ? { siteUrl: row.site_url } : null;
+    },
+    getGscRefreshToken(id) {
+      needProject(id);
+      const row = stmt("SELECT * FROM gsc_connections WHERE project_id=?").get(
+        id,
+      );
+      if (!row) return null;
+      try {
+        const decipher = createDecipheriv(
+          "aes-256-gcm",
+          secret,
+          row.token_nonce,
+        );
+        decipher.setAAD(Buffer.from(JSON.stringify(["gsc", id, row.site_url])));
+        decipher.setAuthTag(row.token_tag);
+        return Buffer.concat([
+          decipher.update(row.token_ciphertext),
+          decipher.final(),
+        ]).toString("utf8");
+      } catch {
+        throw new Error("Unable to decrypt stored credentials");
+      }
+    },
+    setGscConnection(id, { siteUrl, refreshToken }) {
+      return tx(() => {
+        needProject(id);
+        if (
+          typeof siteUrl !== "string" ||
+          !siteUrl ||
+          siteUrl.length > 2048 ||
+          typeof refreshToken !== "string" ||
+          !refreshToken
+        )
+          throw new StoreError(409);
+        const nonce = randomBytes(12),
+          cipher = createCipheriv("aes-256-gcm", secret, nonce);
+        cipher.setAAD(Buffer.from(JSON.stringify(["gsc", id, siteUrl])));
+        const ciphertext = Buffer.concat([
+          cipher.update(refreshToken, "utf8"),
+          cipher.final(),
+        ]);
+        stmt(`INSERT INTO gsc_connections(project_id,site_url,token_nonce,token_ciphertext,token_tag) VALUES (?,?,?,?,?)
+          ON CONFLICT(project_id) DO UPDATE SET site_url=excluded.site_url, token_nonce=excluded.token_nonce,
+          token_ciphertext=excluded.token_ciphertext,token_tag=excluded.token_tag`).run(
+          id,
+          siteUrl,
+          nonce,
+          ciphertext,
+          cipher.getAuthTag(),
+        );
+        return { siteUrl };
+      });
+    },
+    disconnectGsc(id) {
+      needProject(id);
+      stmt("DELETE FROM gsc_connections WHERE project_id=?").run(id);
+    },
     listDrafts(pid) {
       needProject(pid);
-      return stmt("SELECT * FROM drafts WHERE project_id=? ORDER BY created_at DESC, id DESC")
+      return stmt(
+        "SELECT * FROM drafts WHERE project_id=? ORDER BY created_at DESC, id DESC",
+      )
         .all(pid)
         .map(draft);
     },
@@ -289,7 +396,8 @@ export function openStore({ filename, key }) {
     updateDraft(pid, id, revision, { body, linkUrl, linkTitle }) {
       return tx(() => {
         const d = needDraft(pid, id);
-        if (d.status !== "draft" || d.revision !== revision) throw new StoreError(409);
+        if (d.status !== "draft" || d.revision !== revision)
+          throw new StoreError(409);
         stmt(
           "UPDATE drafts SET body=?,link_url=?,link_title=?,revision=revision+1,updated_at=?,error=NULL WHERE project_id=? AND id=?",
         ).run(
@@ -306,7 +414,11 @@ export function openStore({ filename, key }) {
     claimPublish(pid, id, revision) {
       return tx(() => {
         const d = needDraft(pid, id);
-        if (d.status !== "draft" || d.revision !== revision || !needProject(pid).organization_id)
+        if (
+          d.status !== "draft" ||
+          d.revision !== revision ||
+          !needProject(pid).organization_id
+        )
           throw new StoreError(409);
         stmt("UPDATE projects SET organization_locked=1 WHERE id=?").run(pid);
         const t = now();
@@ -325,9 +437,13 @@ export function openStore({ filename, key }) {
           !["draft", "needs_review", "published"].includes(outcome?.status)
         )
           throw new StoreError(409);
-        if (outcome.status === "published" && (!outcome.postUrl || !outcome.publishedAt))
+        if (
+          outcome.status === "published" &&
+          (!outcome.postUrl || !outcome.publishedAt)
+        )
           throw new StoreError(409);
-        if (outcome.status === "published") ensurePostUnassigned(pid, id, outcome.postUrl);
+        if (outcome.status === "published")
+          ensurePostUnassigned(pid, id, outcome.postUrl);
         stmt(
           "UPDATE drafts SET status=?,revision=revision+1,updated_at=?,post_url=?,published_at=?,publish_started_at=?,error=? WHERE project_id=? AND id=?",
         ).run(
@@ -347,7 +463,8 @@ export function openStore({ filename, key }) {
       return tx(() => {
         const d = needDraft(pid, id);
         const stale =
-          d.status === "publishing" && Date.now() - Date.parse(d.publish_started_at) >= 60_000;
+          d.status === "publishing" &&
+          Date.now() - Date.parse(d.publish_started_at) >= 60_000;
         if (
           d.revision !== revision ||
           (d.status !== "needs_review" && !stale) ||

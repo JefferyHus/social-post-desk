@@ -160,7 +160,66 @@ const ga4 = {
   },
 };
 
-const server = createApp({ config, store, linkedin: provider, ga4 });
+const demoSite = "sc-domain:example.org";
+const demoSearchToken = "fictional-search-refresh";
+store.setGscConnection(exampleStudio.id, {
+  siteUrl: demoSite,
+  refreshToken: demoSearchToken,
+});
+const gsc = {
+  authorizeUrl({ state }) {
+    const u = new URL("/oauth/google/search-console/callback", config.origin);
+    u.search = new URLSearchParams({ state, code: "fictional-search-code" });
+    return u.href;
+  },
+  async exchangeCode({ code }) {
+    if (code !== "fictional-search-code") demoUnavailable();
+    return {
+      accessToken: "fictional-search-access",
+      refreshToken: demoSearchToken,
+      expiresAt: demoGoogleExpiry(),
+    };
+  },
+  async listSites() {
+    return [
+      { siteUrl: demoSite, permissionLevel: "siteOwner" },
+      { siteUrl: "https://example.org/", permissionLevel: "siteFullUser" },
+    ];
+  },
+  async refresh(token) {
+    if (token !== demoSearchToken) demoUnavailable();
+    return {
+      accessToken: "fictional-search-access",
+      expiresAt: demoGoogleExpiry(),
+    };
+  },
+  async report(_token, siteUrl, days) {
+    if (siteUrl !== demoSite && siteUrl !== "https://example.org/")
+      demoUnavailable();
+    const end = new Date();
+    end.setUTCDate(end.getUTCDate() - 3);
+    const start = new Date(end);
+    start.setUTCDate(start.getUTCDate() - days + 1);
+    const metrics = {
+      clicks: 42,
+      impressions: 950,
+      ctr: 42 / 950,
+      position: 8.3,
+    };
+    return {
+      days,
+      timezone: "America/Los_Angeles",
+      startDate: start.toISOString().slice(0, 10),
+      endDate: end.toISOString().slice(0, 10),
+      totals: metrics,
+      daily: [{ date: end.toISOString().slice(0, 10), ...metrics }],
+      queries: [{ query: "example workshop", ...metrics }],
+      pages: [{ page: "https://example.org/", ...metrics }],
+      warnings: ["Fictional demo data; Google may omit rows."],
+    };
+  },
+};
+const server = createApp({ config, store, linkedin: provider, ga4, gsc });
 server.listen(config.port, config.host, () => {
   console.log(`Synthetic demo: ${config.origin.origin} · password: ${password}`);
 });

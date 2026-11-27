@@ -56,5 +56,6 @@ export function loadConfig(env = process.env) {
     filename: resolve(env.DATA_DIR || "data", "social-post-desk.sqlite"),
     linkedin: clientId && clientSecret ? { clientId, clientSecret, version, redirectUri } : null,
     ga4: googleClientId && googleClientSecret ? { clientId: googleClientId, clientSecret: googleClientSecret, redirectUri: googleRedirectUri } : null,
+    gsc: googleClientId && googleClientSecret ? { clientId: googleClientId, clientSecret: googleClientSecret, redirectUri: new URL("/oauth/google/search-console/callback", origin).href } : null,
   };
 }
