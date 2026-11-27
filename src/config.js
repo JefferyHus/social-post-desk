@@ -41,7 +41,11 @@ export function loadConfig(env = process.env) {
   const version = env.LINKEDIN_API_VERSION || "202611";
   if (!/^20\d{2}(0[1-9]|1[0-2])$/.test(version))
     throw new Error("LINKEDIN_API_VERSION must use YYYYMM.");
+  const googleClientId = env.GOOGLE_CLIENT_ID?.trim();
+  const googleClientSecret = env.GOOGLE_CLIENT_SECRET?.trim();
+  if (Boolean(googleClientId) !== Boolean(googleClientSecret)) throw new Error("Configure both Google app credentials together.");
   const redirectUri = new URL("/oauth/linkedin/callback", origin).href;
+  const googleRedirectUri = new URL("/oauth/google/callback", origin).href;
   return {
     password,
     key: Buffer.from(rawKey, "hex"),
@@ -51,5 +55,6 @@ export function loadConfig(env = process.env) {
     secureCookie: origin.protocol === "https:",
     filename: resolve(env.DATA_DIR || "data", "social-post-desk.sqlite"),
     linkedin: clientId && clientSecret ? { clientId, clientSecret, version, redirectUri } : null,
+    ga4: googleClientId && googleClientSecret ? { clientId: googleClientId, clientSecret: googleClientSecret, redirectUri: googleRedirectUri } : null,
   };
 }

@@ -44,6 +44,10 @@
             <span aria-hidden="true">✎</span>
             Compose
           </button>
+          <button id="nav-analytics" class="nav-item" type="button" aria-label="Analytics">
+            <span aria-hidden="true">▥</span>
+            Analytics
+          </button>
           <button id="nav-activity" class="nav-item" type="button">
             <span aria-hidden="true">◷</span>
             Activity
@@ -79,6 +83,7 @@
         </header>
         <p id="demo-banner" class="demo-banner" hidden>Fictional data · publishing is simulated</p>
         <div class="content">
+          <div id="publishing-view">
           <section class="intro" id="overview">
             <div><h1>Publishing overview</h1></div>
             <button id="compose-shortcut" class="button primary" type="button">
@@ -188,6 +193,27 @@
               </div>
             </div>
           </div>
+          </div>
+          <section id="analytics-view" class="analytics-view" aria-labelledby="analytics-title" hidden>
+            <div class="intro"><h1 id="analytics-title">Website analytics</h1></div>
+            <div id="analytics-no-project" class="card empty-project" hidden><h2>Choose a project</h2><p>Add a project to connect its Google Analytics property.</p><button id="analytics-add-project" class="button primary" type="button">Add a project</button></div>
+            <div id="analytics-project" hidden>
+              <section class="card ga-connection" aria-labelledby="ga-connection-title">
+                <div class="ga-symbol" aria-hidden="true">▥</div><div class="connection-copy"><h2 id="ga-connection-title">Google Analytics 4</h2><p id="ga-connection-description"></p></div>
+                <form id="ga-connect-form" class="ga-connect-form"><label class="sr-only" for="ga-property-id">Numeric GA4 property ID</label><input id="ga-property-id" inputmode="numeric" pattern="[1-9][0-9]{0,19}" maxlength="20" placeholder="Numeric property ID" required><button id="ga-connect" class="button primary small" type="submit">Connect Google</button></form>
+                <button id="ga-disconnect" class="button outline small" type="button" hidden>Disconnect</button>
+              </section>
+              <section id="ga-report-content" class="card ga-report" aria-labelledby="ga-report-title" hidden>
+                <div class="section-head"><div><h2 id="ga-report-title">Traffic overview</h2><p id="ga-period-label" class="section-note">Google Analytics 4</p></div><div class="ga-report-controls"><label class="sr-only" for="ga-period">Analytics report period</label><select id="ga-period" aria-label="Analytics report period"><option value="7">Last 7 days</option><option value="28" selected>Last 28 days</option><option value="90">Last 90 days</option></select><button id="ga-export" class="button outline small" type="button" disabled>Download CSV</button></div></div>
+                <div id="ga-warnings" class="warnings" role="status"></div><div id="ga-totals" class="ga-totals"></div>
+                <div class="ga-chart-header"><h3>Sessions over time</h3><span id="ga-timezone" class="small-text muted"></span></div><div id="ga-chart" class="ga-chart" aria-hidden="true"></div>
+                <div id="ga-chart-dates" class="ga-chart-dates" aria-hidden="true"></div>
+                <details class="ga-daily-details"><summary>View daily sessions as a table</summary><div id="ga-daily-table" class="ga-table-wrap"></div></details>
+                <div class="ga-breakdowns"><div><h3>Acquisition channels</h3><div id="ga-channels" class="ga-table-wrap"></div></div><div><h3>Top pages</h3><div id="ga-pages" class="ga-table-wrap"></div></div></div>
+                <p class="report-help">A dash means data is unavailable. Views include pages and screens tracked in the property.</p>
+              </section>
+            </div>
+          </section>
         </div>
       </main>
     </div>

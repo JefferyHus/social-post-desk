@@ -786,3 +786,38 @@ dialog::backdrop {
     content: none;
   }
 }
+.ga-connection { padding: 18px 22px; display: flex; align-items: center; gap: 16px; margin-bottom: 22px; }
+.ga-connection h2 { font-size: 15px; margin: 0 0 4px; }
+.ga-connection p { font-size: 12px; color: #4b625a; margin: 0; }
+.ga-symbol { display: grid; place-items: center; flex-shrink: 0; width: 45px; height: 45px; border-radius: 11px; background: #e4f2ed; color: #2a7a69; font-size: 22px; font-weight: 800; }
+.ga-connect-form, .ga-report-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ga-connect-form input { width: 165px; font-size: 12px; }
+.ga-report { padding: 26px; }
+.ga-connection button, .ga-report-controls :is(button, select) { min-height: 44px; }
+.ga-report .section-note { margin: 6px 0 0; }
+.ga-report-controls select { font-size: 12px; }
+.ga-totals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 24px; }
+.ga-chart-header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 28px; }
+.ga-chart-header h3, .ga-breakdowns h3 { font-size: 14px; margin: 0 0 12px; }
+.ga-chart { display: flex; align-items: end; gap: 3px; height: 180px; padding: 10px 0 0; border-bottom: 1px solid #dce8e2; overflow-x: auto; }
+.ga-chart-dates { display: flex; justify-content: space-between; margin-top: 6px; color: #4b625a; font-size: 12px; }
+.ga-chart .empty-state { margin: auto; }
+.ga-bar { display: flex; align-items: end; flex: 1 0 5px; height: 100%; min-width: 5px; }
+.ga-bar-fill { display: block; width: 100%; min-height: 2px; border-radius: 3px 3px 0 0; background: #53a38d; }
+.ga-bar-fill.unavailable { height: 3px; background: #bccdc5; }
+.ga-daily-details { margin-top: 15px; color: #277765; font-size: 12px; font-weight: 700; }
+.ga-daily-details summary { cursor: pointer; }
+.ga-table-wrap { max-width: 100%; overflow: auto; }
+.ga-table { border-collapse: collapse; width: 100%; margin-top: 10px; font-size: 12px; text-align: left; }
+.ga-table th, .ga-table td { padding: 10px 8px; border-bottom: 1px solid #edf2ef; vertical-align: top; overflow-wrap: anywhere; }
+.ga-table th { color: #4b625a; font-weight: 700; }
+.ga-breakdowns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 30px; margin-top: 26px; }
+.ga-report > .report-help { margin-top: 24px; }
+@media (max-width: 700px) {
+  .ga-connection { flex-wrap: wrap; align-items: flex-start; }
+  .ga-connect-form { width: 100%; }
+  .ga-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ga-breakdowns { grid-template-columns: 1fr; }
+  .ga-report { padding: 20px; }
+  .ga-report .section-head { align-items: flex-start; flex-wrap: wrap; }
+}

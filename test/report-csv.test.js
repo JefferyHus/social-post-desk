@@ -59,3 +59,23 @@ test("uses safe bounded filenames without a path or untrusted date text", () => 
   assert.equal(reportFilename("💥", { from: "../../bad" }), "social-report-project-report.csv");
   assert.ok(reportFilename("x".repeat(1000), base).length < 100);
 });
+
+test("GA4 CSV retains unknowns and neutralizes untrusted dimensions", async () => {
+  const { ga4ReportCsv, ga4ReportFilename } = await import("../public/report-csv.js");
+  const result = parseCsv(ga4ReportCsv({ name: "=project" }, {
+    days: 28, timezone: "Africa/Casablanca", totals: { activeUsers: 0, sessions: null, screenPageViews: 25, keyEvents: 2 },
+    daily: [{ date: "2026-11-01", sessions: null }], channels: [{ channel: "+formula", sessions: 0, keyEvents: 1 }],
+    pages: [{ path: "@danger", screenPageViews: null }], warnings: ["=warning"],
+  }));
+  const headers = result[0]; const cell = (row, name) => row[headers.indexOf(name)];
+  assert.equal(cell(result[1], "project"), "'=project");
+  assert.equal(cell(result[1], "active_users"), "0");
+  assert.equal(cell(result[1], "sessions"), "");
+  assert.equal(cell(result[1], "warnings"), "'=warning");
+  assert.equal(cell(result[2], "scope"), "daily_sessions");
+  assert.equal(cell(result[2], "sessions"), "");
+  assert.equal(cell(result[3], "dimension"), "'+formula");
+  assert.equal(cell(result[3], "sessions"), "0");
+  assert.equal(cell(result[4], "dimension"), "'@danger");
+  assert.equal(ga4ReportFilename("../Café", 28), "ga4-report-Cafe-28-days.csv");
+});

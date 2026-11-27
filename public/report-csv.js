@@ -48,3 +48,21 @@ export function reportFilename(projectName, report) {
   const day = typeof report?.from === "string" && /^\d{4}-\d{2}-\d{2}/.test(report.from) ? report.from.slice(0, 10) : "report";
   return `social-report-${name}-${day}.csv`;
 }
+
+/** GA4 values are copied as returned; nulls remain empty rather than becoming zero. */
+export function ga4ReportCsv(project, report) {
+  if (!project || !report) throw new Error("A loaded report and project are required.");
+  const columns = ["project", "scope", "days", "timezone", "dimension", "active_users", "sessions", "screen_page_views", "key_events", "warnings"];
+  const value = (v) => typeof v === "number" && Number.isFinite(v) ? v : null;
+  const totals = report.totals || {};
+  const row = (scope, dimension, active, sessions, views, events, warnings = null) => [project.name, scope, report.days, report.timezone, dimension, value(active), value(sessions), value(views), value(events), warnings];
+  const rows = [columns, row("selected_period_totals", null, totals.activeUsers, totals.sessions, totals.screenPageViews, totals.keyEvents, Array.isArray(report.warnings) ? report.warnings.join("\n") : null)];
+  for (const d of report.daily || []) rows.push(row("daily_sessions", d.date, null, d.sessions, null, null));
+  for (const c of report.channels || []) rows.push(row("channel", c.channel, null, c.sessions, null, c.keyEvents));
+  for (const p of report.pages || []) rows.push(row("page", p.path, null, null, p.screenPageViews, null));
+  return `\uFEFF${rows.map((r) => r.map(csvCell).join(",")).join("\r\n")}\r\n`;
+}
+export function ga4ReportFilename(name, days) {
+  const safeName = reportFilename(name, {}).replace(/^social-report-/, "").replace(/-report\.csv$/, "");
+  return `ga4-report-${safeName}-${[7, 28, 90].includes(days) ? days : "unknown"}-days.csv`;
+}

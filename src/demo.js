@@ -97,7 +97,70 @@ const provider = {
   },
 };
 
-const server = createApp({ config, store, linkedin: provider });
+const demoPropertyId = "4242001";
+const demoGoogleTokens = {
+  accessToken: "fictional-ga4-access",
+  refreshToken: "fictional-ga4-refresh",
+};
+const demoGoogleExpiry = () => new Date(Date.now() + 60 * 60_000).toISOString();
+store.setGa4Connection(exampleStudio.id, {
+  propertyId: demoPropertyId,
+  refreshToken: demoGoogleTokens.refreshToken,
+});
+
+const ga4 = {
+  authorizeUrl({ state }) {
+    const url = new URL("/oauth/google/callback", config.origin);
+    url.search = new URLSearchParams({ state, code: "fictional-ga4-code" });
+    return url.href;
+  },
+  async exchangeCode({ code }) {
+    if (code !== "fictional-ga4-code") demoUnavailable();
+    return { ...demoGoogleTokens, expiresAt: demoGoogleExpiry() };
+  },
+  async refresh(refreshToken) {
+    if (refreshToken !== demoGoogleTokens.refreshToken) demoUnavailable();
+    return { accessToken: demoGoogleTokens.accessToken, expiresAt: demoGoogleExpiry() };
+  },
+  async report(_accessToken, propertyId, days) {
+    if (propertyId !== demoPropertyId) demoUnavailable();
+    const date = new Date();
+    const end = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+    const daily = Array.from({ length: days }, (_, index) => {
+      const offset = index - days;
+      return {
+        date: new Date(end + offset * 86_400_000).toISOString().slice(0, 10),
+        sessions: 64 + ((index * 137 + (index % 4) * 19) % 103),
+      };
+    });
+    const sessions = daily.reduce((sum, item) => sum + item.sessions, 0);
+    const organic = Math.round(sessions * 0.54);
+    const direct = Math.round(sessions * 0.28);
+    const keyEvents = Math.round(sessions * 0.033);
+    const organicEvents = Math.round(keyEvents * 0.56);
+    const directEvents = Math.round(keyEvents * 0.27);
+    const screenPageViews = Math.round(sessions * 1.74);
+    return {
+      days,
+      totals: { sessions, keyEvents, screenPageViews, activeUsers: Math.round(sessions * 0.78) },
+      daily,
+      channels: [
+        { channel: "Organic Search", sessions: organic, keyEvents: organicEvents },
+        { channel: "Direct", sessions: direct, keyEvents: directEvents },
+        { channel: "Organic Social", sessions: sessions - organic - direct, keyEvents: keyEvents - organicEvents - directEvents },
+      ],
+      pages: [
+        { path: "/", screenPageViews: Math.round(screenPageViews * 0.44) },
+        { path: "/workshop-checklist", screenPageViews: Math.round(screenPageViews * 0.29) },
+        { path: "/resources", screenPageViews: Math.round(screenPageViews * 0.18) },
+      ],
+      timezone: "UTC",
+      warnings: [],
+    };
+  },
+};
+
+const server = createApp({ config, store, linkedin: provider, ga4 });
 server.listen(config.port, config.host, () => {
   console.log(`Synthetic demo: ${config.origin.origin} · password: ${password}`);
 });

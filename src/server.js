@@ -155,9 +155,11 @@ function providerMessage(error) {
   }
 }
 
-export function createApp({ config, store, linkedin, now = Date.now }) {
+export function createApp({ config, store, linkedin, ga4 = null, now = Date.now }) {
   const sessions = new Map();
   const connectionRequests = new Map();
+  const ga4Requests = new Map();
+  const ga4States = new Map();
   const loginAttempts = new Map();
   const reports = new Map();
   const password = hash(config.password);
@@ -219,6 +221,8 @@ export function createApp({ config, store, linkedin, now = Date.now }) {
     return {
       ...project,
       connection: linkedin ? project.connection : "unconfigured",
+      ga4: { status: !ga4 ? "unconfigured" : store.getGa4Connection(project.id) ? "connected" : "disconnected",
+        propertyId: store.getGa4Connection(project.id)?.propertyId ?? null },
     };
   }
 
@@ -251,6 +255,86 @@ export function createApp({ config, store, linkedin, now = Date.now }) {
     });
     reports.set(key, { expires: now() + minute, result });
     return result;
+  }
+
+  function invalidateGa4(projectId) {
+    ga4States.delete(projectId);
+    ga4Requests.delete(projectId);
+  }
+
+  function ga4State(projectId) {
+    let state = ga4States.get(projectId);
+    if (!state) {
+      if (ga4States.size >= 128) ga4States.delete(ga4States.keys().next().value);
+      state = { token: null, tokenExpires: 0, refresh: null, reports: new Map() };
+      ga4States.set(projectId, state);
+    }
+    return state;
+  }
+
+  function assertGa4Current(projectId, state, propertyId) {
+    if (ga4States.get(projectId) !== state || store.getGa4Connection(projectId)?.propertyId !== propertyId) {
+      throw new RequestError(409, "Google Analytics connection changed. Try again.");
+    }
+  }
+
+  async function ga4Report(projectId, days) {
+    if (!ga4) throw new RequestError(409, "Set up Google Analytics first.");
+    const connection = store.getGa4Connection(projectId);
+    if (!connection) throw new RequestError(409, "Connect a Google Analytics property first.");
+    const state = ga4State(projectId);
+    const cached = state.reports.get(days);
+    if (cached && cached.expires > now()) return cached.promise;
+    const promise = (async () => {
+      try {
+        if (!state.token || state.tokenExpires <= now() + 30_000) {
+          if (!state.refresh) {
+            const refreshToken = store.getGa4RefreshToken(projectId);
+            if (!refreshToken) throw new RequestError(409, "Connect a Google Analytics property first.");
+            state.refresh = ga4.refresh(refreshToken).then((token) => {
+              assertGa4Current(projectId, state, connection.propertyId);
+              if (typeof token.accessToken !== "string" || !token.accessToken || !Number.isFinite(Date.parse(token.expiresAt)) || Date.parse(token.expiresAt) <= now()) throw new Error("Invalid Google credentials");
+              state.token = token.accessToken;
+              state.tokenExpires = Date.parse(token.expiresAt);
+            }).finally(() => { state.refresh = null; });
+          }
+          await state.refresh;
+        }
+        assertGa4Current(projectId, state, connection.propertyId);
+        const report = await ga4.report(state.token, connection.propertyId, days);
+        assertGa4Current(projectId, state, connection.propertyId);
+        return report;
+      } catch (error) {
+        if (error instanceof RequestError) throw error;
+        throw new RequestError(502, "Google Analytics report is unavailable. Check the connection and permissions.");
+      }
+    })();
+    state.reports.set(days, { promise, expires: now() + minute });
+    promise.catch(() => { if (state.reports.get(days)?.promise === promise) state.reports.delete(days); });
+    return promise;
+  }
+
+  async function googleCallback(url, response, auth) {
+    const { key, session } = auth;
+    const pending = session.ga4oauth;
+    const state = url.searchParams.get("state");
+    if (!pending || pending.expires <= now() || typeof state !== "string" || pending.stateKey !== keyOf(state) || ga4Requests.get(pending.projectId) !== pending) {
+      throw new RequestError(400, "This Google connection request expired. Start again from your project.");
+    }
+    session.ga4oauth = null;
+    const target = `/?project=${pending.projectId}&ga4=`;
+    try {
+      const code = url.searchParams.get("code");
+      if (!ga4 || url.searchParams.has("error") || !code || code.length > 2048) return redirect(response, `${target}error`);
+      const creds = await ga4.exchangeCode({ code, verifier: pending.verifier });
+      if (typeof creds.accessToken !== "string" || !creds.accessToken || typeof creds.refreshToken !== "string" || !creds.refreshToken || !Number.isFinite(Date.parse(creds.expiresAt)) || Date.parse(creds.expiresAt) <= now()) throw new Error("Invalid Google credentials");
+      await ga4.report(creds.accessToken, pending.propertyId, 7);
+      if (sessions.get(key) !== session || session.expires <= now() || pending.expires <= now() || ga4Requests.get(pending.projectId) !== pending) return redirect(response, `${target}error`);
+      store.setGa4Connection(pending.projectId, { propertyId: pending.propertyId, refreshToken: creds.refreshToken });
+      invalidateGa4(pending.projectId);
+      return redirect(response, `${target}connected`);
+    } catch { return redirect(response, `${target}error`); }
+    finally { if (ga4Requests.get(pending.projectId) === pending) ga4Requests.delete(pending.projectId); }
   }
 
   async function oauthCallback(url, response, auth) {
@@ -367,6 +451,29 @@ export function createApp({ config, store, linkedin, now = Date.now }) {
       const updated = store.updateProject(projectId, input);
       return send(response, 200, projectView(updated));
     }
+    if (tail === "ga4/connect" && method === "POST") {
+      const body = await readJson(request);
+      if (!ga4) throw new RequestError(409, "Set up Google Analytics first.");
+      if (typeof body.propertyId !== "string" || !/^[1-9]\d{0,19}$/.test(body.propertyId)) throw new RequestError(400, "Use a numeric Google Analytics property ID.");
+      for (const [id, pending] of ga4Requests) if (pending.expires <= now()) ga4Requests.delete(id);
+      if (ga4Requests.size >= 128 && !ga4Requests.has(projectId)) throw new RequestError(429, "Too many connection requests.");
+      const state = newToken(), verifier = newToken();
+      const pending = { projectId, propertyId: body.propertyId, stateKey: keyOf(state), verifier, expires: now() + oauthLifetime };
+      session.ga4oauth = pending;
+      ga4Requests.set(projectId, pending);
+      return send(response, 200, { authorizeUrl: ga4.authorizeUrl({ state, challenge: hash(verifier).toString("base64url") }) });
+    }
+    if (tail === "ga4/connection" && method === "DELETE") {
+      store.disconnectGa4(projectId);
+      invalidateGa4(projectId);
+      if (session.ga4oauth?.projectId === projectId) session.ga4oauth = null;
+      return send(response, 200, projectView(store.getProject(projectId)));
+    }
+    if (tail === "ga4/report" && method === "GET") {
+      const days = Number(url.searchParams.get("days") ?? "28");
+      if (![7, 28, 90].includes(days)) throw new RequestError(400, "Choose 7, 28 or 90 days.");
+      return send(response, 200, await ga4Report(projectId, days));
+    }
     if (tail === "connect" && method === "POST") {
       await readJson(request);
       const provider = requireLinkedIn();
@@ -456,6 +563,7 @@ export function createApp({ config, store, linkedin, now = Date.now }) {
     }
     if (url.pathname === "/api/login" && method === "POST") return login(request, response);
     if (!auth) throw new RequestError(401, "Sign in to continue.");
+    if (url.pathname === "/oauth/google/callback" && method === "GET") return googleCallback(url, response, auth);
     if (url.pathname === "/oauth/linkedin/callback" && method === "GET")
       return oauthCallback(url, response, auth);
     if (url.pathname === "/api/logout" && method === "POST") {
@@ -500,7 +608,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const config = loadConfig();
     const store = openStore({ filename: config.filename, key: config.key });
     const linkedin = config.linkedin ? createLinkedIn(config.linkedin) : null;
-    const server = createApp({ config, store, linkedin });
+    const ga4 = config.ga4 ? (await import("./ga4.js")).createGa4(config.ga4) : null;
+    const server = createApp({ config, store, linkedin, ga4 });
     server.on("error", () => {
       console.error("The server could not listen on the configured address.");
       store.close();

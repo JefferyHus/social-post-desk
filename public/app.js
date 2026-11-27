@@ -1,4 +1,4 @@
-import { reportCsv, reportFilename } from "/report-csv.js";
+import { reportCsv, reportFilename, ga4ReportCsv, ga4ReportFilename } from "/report-csv.js";
 
 const $ = (selector) => document.querySelector(selector);
 const state = {
@@ -11,6 +11,12 @@ const state = {
   editingProject: false,
   request: 0,
   reportRequest: 0,
+  demo: false,
+  ga4Request: 0,
+  ga4Report: null,
+  ga4Error: null,
+  ga4Loading: false,
+  ga4FormProject: null,
 };
 const notice = $("#notice");
 let noticeTimer;
@@ -114,6 +120,7 @@ function renderProjects() {
   $("#empty-project").hidden = !!state.project;
   $("#project-content").hidden = !state.project;
   const p = state.project;
+  renderGa4();
   $("#connection-pill").textContent = p
     ? {
         connected: "Connected",
@@ -341,6 +348,11 @@ async function loadReport() {
 }
 async function chooseProject(id) {
   const token = ++state.request;
+  state.ga4Request++;
+  state.reportRequest++;
+  state.ga4Report = null;
+  state.ga4Error = null;
+  state.ga4Loading = false;
   state.project = state.projects.find((p) => p.id === id) || null;
   state.selected = null;
   state.drafts = [];
@@ -352,6 +364,7 @@ async function chooseProject(id) {
   editDraft(null, { scroll: false });
   if (!state.project) return;
   const projectId = state.project.id;
+  if (!$("#analytics-view").hidden) void loadGa4Report();
   try {
     const drafts = await api(endpoint("/drafts"));
     if (token === state.request && state.project?.id === projectId) {
@@ -370,10 +383,12 @@ async function refreshProjects(preferred) {
 async function start() {
   const params = new URLSearchParams(location.search),
     project = params.get("project"),
-    result = params.get("linkedin");
-  if (result) {
+    result = params.get("linkedin"),
+    ga4Result = params.get("ga4");
+  if (result || ga4Result) {
     params.delete("project");
     params.delete("linkedin");
+    params.delete("ga4");
     history.replaceState(
       null,
       "",
@@ -381,7 +396,8 @@ async function start() {
     );
   }
   const session = await api("/api/session");
-  $("#demo-banner").hidden = !session.demo;
+  state.demo = session.demo === true;
+  $("#demo-banner").hidden = !state.demo;
   if (session.demo) {
     $("#publish-confirmation").textContent = "Review the example page and text. This demo simulates publication.";
   }
@@ -389,6 +405,10 @@ async function start() {
   $("#app").hidden = !session.authenticated;
   if (session.authenticated) {
     await refreshProjects(project);
+    if (ga4Result) {
+      showView("analytics");
+      message(ga4Result === "connected" ? "Google Analytics connection completed." : "Google Analytics connection could not be completed.", ga4Result !== "connected");
+    }
     if (result)
       message(
         result === "connected"
@@ -416,6 +436,10 @@ async function logout() {
   await api("/api/logout", send("POST", {}));
   state.request++;
   state.reportRequest++;
+  state.ga4Request++;
+  state.ga4Report = null;
+  state.ga4Error = null;
+  state.ga4Loading = false;
   state.projects = [];
   state.project = null;
   state.selected = null;
@@ -574,12 +598,32 @@ $("#export-report").addEventListener("click", () => {
   }
 });
 $("#period").addEventListener("change", loadReport);
-$("#nav-overview").addEventListener("click", () => scrollToSection("#overview"));
+function showView(view) {
+  const analytics = view === "analytics";
+  $("#publishing-view").hidden = analytics;
+  $("#connection-pill").hidden = analytics;
+  $("#analytics-view").hidden = !analytics;
+  const active = $(analytics ? "#nav-analytics" : "#nav-overview");
+  for (const item of document.querySelectorAll(".nav-item")) {
+    item.classList.toggle("active", item === active);
+    item.removeAttribute("aria-current");
+  }
+  active.setAttribute("aria-current", "page");
+  if (analytics && !state.ga4Loading && !state.ga4Report) void loadGa4Report();
+  if (analytics) window.scrollTo({ top: 0, behavior: "instant" });
+}
+$("#nav-analytics").addEventListener("click", () => showView("analytics"));
+$("#nav-overview").addEventListener("click", () => {
+  showView("publishing");
+  window.scrollTo({ top: 0, behavior: "instant" });
+});
 $("#nav-compose").addEventListener("click", () => {
+  showView("publishing");
   if (state.project) scrollToSection("#compose");
   else openProject(false);
 });
 $("#nav-activity").addEventListener("click", () => {
+  showView("publishing");
   if (state.project) scrollToSection("#activity");
   else openProject(false);
 });
@@ -587,4 +631,110 @@ $("#compose-shortcut").addEventListener("click", () => {
   if (state.project) editDraft(null);
   else openProject(false);
 });
+function renderTable(container, headers, rows) {
+  container.replaceChildren();
+  if (!rows.length) { container.append(el("p", "empty-state", "No data available.")); return; }
+  const table = el("table", "ga-table");
+  const head = document.createElement("thead"), headRow = document.createElement("tr");
+  for (const label of headers) { const th = el("th", "", label); th.scope = "col"; headRow.append(th); }
+  head.append(headRow); table.append(head);
+  const body = document.createElement("tbody");
+  for (const values of rows) { const tr = document.createElement("tr"); for (const value of values) tr.append(el("td", "", value)); body.append(tr); }
+  table.append(body); container.append(table);
+}
+function renderGa4() {
+  const project = state.project, connection = project?.ga4;
+  $("#analytics-no-project").hidden = !!project;
+  $("#analytics-project").hidden = !project;
+  const connected = connection?.status === "connected";
+  $("#ga-connect").textContent = state.demo ? "Simulate connection" : "Connect Google Analytics";
+  $("#ga-connection-description").textContent = connected ? `Connected to property ${connection.propertyId || "—"}.` : connection?.status === "unconfigured" ? "Configure the Google OAuth app on the server to connect." : "Connect a GA4 property to view website traffic.";
+  $("#ga-connect-form").hidden = connected || connection?.status === "unconfigured";
+  $("#ga-disconnect").hidden = !connected;
+  $("#ga-report-content").hidden = !connected;
+  if (state.ga4FormProject !== project?.id) {
+    $("#ga-property-id").value = connection?.propertyId || "";
+    state.ga4FormProject = project?.id || null;
+  }
+  $("#ga-export").disabled = !project || !state.ga4Report;
+  const report = state.ga4Report;
+  $("#ga-period-label").textContent = report ? `Last ${report.days} days · ${report.timezone || "timezone unavailable"}` : "Google Analytics 4";
+  const totals = $("#ga-totals"); totals.replaceChildren();
+  for (const [key, label] of [["activeUsers", "Active users"], ["sessions", "Sessions"], ["screenPageViews", "Views"], ["keyEvents", "Key events"]]) {
+    const item = el("div", "metric"); item.append(el("span", "metric-value", metricText(report?.totals?.[key])), el("span", "metric-label", label)); totals.append(item);
+  }
+  const warnings = $("#ga-warnings"); warnings.replaceChildren();
+  if (state.ga4Error) warnings.append(el("p", "warning", state.ga4Error));
+  if (state.ga4Loading) warnings.append(el("p", "empty-state", "Loading analytics…"));
+  for (const warning of report?.warnings || []) warnings.append(el("p", "warning", warning));
+  $("#ga-timezone").textContent = report?.timezone ? `Property timezone: ${report.timezone}` : "";
+  const chart = $("#ga-chart"); chart.replaceChildren();
+  const daily = report?.daily || [];
+  const chartDates = $("#ga-chart-dates");
+  chartDates.replaceChildren();
+  if (daily.length > 1) {
+    chartDates.append(el("span", "", daily[0].date), el("span", "", daily.at(-1).date));
+  }
+  const maximum = Math.max(0, ...daily.map(d => typeof d.sessions === "number" && Number.isFinite(d.sessions) ? Math.max(0, d.sessions) : 0));
+  for (const item of daily) {
+    const bar = el("div", "ga-bar");
+    const value = typeof item.sessions === "number" && Number.isFinite(item.sessions) ? Math.max(0, item.sessions) : null;
+    bar.title = `${item.date}: ${value === null ? "unavailable" : metricText(value)} sessions`;
+    const fill = el("span", value === null ? "ga-bar-fill unavailable" : "ga-bar-fill");
+    if (value !== null) fill.style.height = `${maximum > 0 ? Math.max(1, value / maximum * 100) : 1}%`;
+    bar.append(fill); chart.append(bar);
+  }
+  if (!daily.length) chart.append(el("p", "empty-state", connected ? "No daily sessions returned." : "Connect Google Analytics to view traffic."));
+  renderTable($("#ga-daily-table"), ["Date", "Sessions"], daily.map(d => [d.date || "—", metricText(d.sessions)]));
+  renderTable($("#ga-channels"), ["Channel", "Sessions", "Key events"], (report?.channels || []).map(c => [c.channel || "—", metricText(c.sessions), metricText(c.keyEvents)]));
+  renderTable($("#ga-pages"), ["Page path", "Page views"], (report?.pages || []).map(p => [p.path || "—", metricText(p.screenPageViews)]));
+}
+async function loadGa4Report() {
+  const id = state.project?.id, request = ++state.ga4Request;
+  state.ga4Report = null; state.ga4Error = null; state.ga4Loading = state.project?.ga4?.status === "connected";
+  renderGa4();
+  if (!id || !state.ga4Loading) return;
+  const days = $("#ga-period").value;
+  try {
+    const report = await api(`/api/projects/${encodeURIComponent(id)}/ga4/report?days=${encodeURIComponent(days)}`);
+    if (state.project?.id === id && request === state.ga4Request) state.ga4Report = report;
+  } catch (error) {
+    if (state.project?.id === id && request === state.ga4Request) state.ga4Error = `Analytics unavailable: ${error.message}`;
+  } finally {
+    if (state.project?.id === id && request === state.ga4Request) { state.ga4Loading = false; renderGa4(); }
+  }
+}
+$("#ga-connect-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = $("#ga-connect"), id = state.project?.id;
+  if (!id) return;
+  try {
+    setBusy(button, true);
+    const result = await api(`/api/projects/${encodeURIComponent(id)}/ga4/connect`, send("POST", { propertyId: $("#ga-property-id").value.trim() }));
+    if (state.project?.id !== id) return;
+    const url = new URL(result.authorizeUrl);
+    const valid = state.demo
+      ? url.origin === location.origin && url.pathname === "/oauth/google/callback"
+      : url.origin === "https://accounts.google.com" && url.pathname === "/o/oauth2/v2/auth";
+    if (!valid || url.username || url.password) throw new Error("Invalid authorization URL.");
+    location.assign(url.href);
+  } catch (error) { showError(error); } finally { setBusy(button, false); }
+});
+setButton($("#ga-disconnect"), async () => {
+  const id = state.project?.id;
+  if (!id || !window.confirm("Disconnect this Google Analytics property?")) return;
+  await api(`/api/projects/${encodeURIComponent(id)}/ga4/connection`, { method: "DELETE" });
+  if (state.project?.id === id) { await refreshProjects(id); message("Google Analytics disconnected."); }
+});
+$("#ga-period").addEventListener("change", loadGa4Report);
+$("#analytics-add-project").addEventListener("click", () => openProject(false));
+$("#ga-export").addEventListener("click", () => {
+  if (!state.project || !state.ga4Report) return;
+  try {
+    const url = URL.createObjectURL(new Blob([ga4ReportCsv(state.project, state.ga4Report)], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a"); link.href = url; link.download = ga4ReportFilename(state.project.name, state.ga4Report.days);
+    document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) { showError(error); }
+});
+
 start().catch(showError);

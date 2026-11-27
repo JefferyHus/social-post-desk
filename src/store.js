@@ -67,6 +67,10 @@ export function openStore({ filename, key }) {
       revision INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
       post_url TEXT, published_at TEXT, publish_started_at TEXT, error TEXT
     );
+    CREATE TABLE IF NOT EXISTS ga4_connections (
+      project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+      property_id TEXT NOT NULL, token_nonce BLOB NOT NULL, token_ciphertext BLOB NOT NULL, token_tag BLOB NOT NULL
+    );
     CREATE INDEX IF NOT EXISTS drafts_project_created ON drafts(project_id, created_at DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS drafts_project_published_url ON drafts(project_id, post_url) WHERE post_url IS NOT NULL;
   `);
@@ -232,6 +236,36 @@ export function openStore({ filename, key }) {
       if (!p.token_ciphertext) return null;
       return { accessToken: decrypt(p), expiresAt: p.token_expires_at };
     },
+    getGa4Connection(id) {
+      needProject(id);
+      const row = stmt("SELECT property_id FROM ga4_connections WHERE project_id=?").get(id);
+      return row ? { propertyId: row.property_id } : null;
+    },
+    getGa4RefreshToken(id) {
+      needProject(id);
+      const row = stmt("SELECT * FROM ga4_connections WHERE project_id=?").get(id);
+      if (!row) return null;
+      try {
+        const decipher = createDecipheriv("aes-256-gcm", secret, row.token_nonce);
+        decipher.setAAD(Buffer.from(JSON.stringify(["ga4", id, row.property_id])));
+        decipher.setAuthTag(row.token_tag);
+        return Buffer.concat([decipher.update(row.token_ciphertext), decipher.final()]).toString("utf8");
+      } catch { throw new Error("Unable to decrypt stored credentials"); }
+    },
+    setGa4Connection(id, { propertyId, refreshToken }) {
+      return tx(() => {
+        needProject(id);
+        if (typeof propertyId !== "string" || !/^[1-9]\d{0,19}$/.test(propertyId) || typeof refreshToken !== "string" || !refreshToken) throw new StoreError(409);
+        const nonce = randomBytes(12), cipher = createCipheriv("aes-256-gcm", secret, nonce);
+        cipher.setAAD(Buffer.from(JSON.stringify(["ga4", id, propertyId])));
+        const ciphertext = Buffer.concat([cipher.update(refreshToken, "utf8"), cipher.final()]);
+        stmt(`INSERT INTO ga4_connections(project_id,property_id,token_nonce,token_ciphertext,token_tag) VALUES (?,?,?,?,?)
+          ON CONFLICT(project_id) DO UPDATE SET property_id=excluded.property_id, token_nonce=excluded.token_nonce,
+          token_ciphertext=excluded.token_ciphertext,token_tag=excluded.token_tag`).run(id, propertyId, nonce, ciphertext, cipher.getAuthTag());
+        return { propertyId };
+      });
+    },
+    disconnectGa4(id) { needProject(id); stmt("DELETE FROM ga4_connections WHERE project_id=?").run(id); },
     listDrafts(pid) {
       needProject(pid);
       return stmt("SELECT * FROM drafts WHERE project_id=? ORDER BY created_at DESC, id DESC")
