@@ -1,3 +1,5 @@
+import { reportCsv, reportFilename } from "/report-csv.js";
+
 const $ = (selector) => document.querySelector(selector);
 const state = {
   projects: [],
@@ -254,6 +256,7 @@ function metricText(value) {
     : "—";
 }
 function renderReport() {
+  $("#export-report").disabled = !state.project || !state.report;
   const metrics = $("#metrics");
   metrics.replaceChildren();
   const totals = state.report?.totals;
@@ -378,6 +381,10 @@ async function start() {
     );
   }
   const session = await api("/api/session");
+  $("#demo-banner").hidden = !session.demo;
+  if (session.demo) {
+    $("#publish-confirmation").textContent = "Review the example page and text. This demo simulates publication.";
+  }
   $("#login").hidden = session.authenticated;
   $("#app").hidden = !session.authenticated;
   if (session.authenticated) {
@@ -549,6 +556,22 @@ setButton($("#confirm-publish"), async () => {
       : "Publishing status updated. Check activity for the result.",
   );
   await loadReport();
+});
+$("#export-report").addEventListener("click", () => {
+  if (!state.project || !state.report) return;
+  try {
+    const csv = reportCsv(state.project, state.report);
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = reportFilename(state.project.name, state.report);
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) {
+    showError(error);
+  }
 });
 $("#period").addEventListener("change", loadReport);
 $("#nav-overview").addEventListener("click", () => scrollToSection("#overview"));

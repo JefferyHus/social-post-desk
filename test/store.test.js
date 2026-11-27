@@ -179,3 +179,54 @@ test("separate database connections cannot claim the same draft twice", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("one Page post cannot be attributed to drafts in different projects", () => {
+  const s = openStore({ filename: ":memory:", key });
+  try {
+    const a = s.createProject({ name: "A", organizationId: page.id });
+    const b = s.createProject({ name: "B", organizationId: page.id });
+    const c = s.createProject({ name: "Other page", organizationId: "456" });
+    const url = "https://www.linkedin.com/feed/update/synthetic-1";
+    const publishedAt = "2026-11-27T12:00:00Z";
+    const createClaim = (p) => {
+      const d = s.createDraft(p.id, { body: "Same synthetic text" });
+      return s.claimPublish(p.id, d.id, d.revision);
+    };
+    const da = createClaim(a), db = createClaim(b);
+    s.finishPublish(a.id, da.id, da.revision, { status: "published", postUrl: url, publishedAt });
+    // Failed completion preserves the in-flight state and prevents retries.
+    conflict(() => s.finishPublish(b.id, db.id, db.revision, { status: "published", postUrl: url, publishedAt }));
+    assert.equal(s.getDraft(b.id, db.id).status, "publishing");
+    const uncertain = s.finishPublish(b.id, db.id, db.revision, { status: "needs_review" });
+    conflict(() => s.completeReconciliation(b.id, db.id, uncertain.revision, { postUrl: url, publishedAt }));
+    assert.equal(s.getDraft(b.id, db.id).status, "needs_review");
+    assert.equal(s.completeReconciliation(b.id, db.id, uncertain.revision, {
+      postUrl: "https://www.linkedin.com/feed/update/synthetic-2", publishedAt,
+    }).status, "published");
+    // The uniqueness rule is scoped to the selected Page.
+    const dc = createClaim(c);
+    assert.equal(s.finishPublish(c.id, dc.id, dc.revision, { status: "published", postUrl: url, publishedAt }).status, "published");
+  } finally { s.close(); }
+});
+
+test("historical cross-project duplicate links do not prevent database opening", () => {
+  const dir = mkdtempSync(join(tmpdir(), "social-post-desk-"));
+  const file = join(dir, "db.sqlite");
+  try {
+    const s = openStore({ filename: file, key });
+    const a = s.createProject({ name: "A", organizationId: page.id });
+    const b = s.createProject({ name: "B", organizationId: page.id });
+    const da = s.createDraft(a.id, { body: "A" });
+    const db = s.createDraft(b.id, { body: "B" });
+    s.close();
+    // Model an existing database from before the new guard.
+    const legacy = new DatabaseSync(file);
+    const addLegacy = legacy.prepare("UPDATE drafts SET status='published', post_url=?, published_at=? WHERE id=?");
+    for (const d of [da, db]) addLegacy.run("https://www.linkedin.com/feed/update/legacy", "2026-11-27T12:00:00Z", d.id);
+    legacy.close();
+    const reopened = openStore({ filename: file, key });
+    assert.equal(reopened.getDraft(a.id, da.id).status, "published");
+    assert.equal(reopened.getDraft(b.id, db.id).status, "published");
+    reopened.close();
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

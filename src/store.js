@@ -102,6 +102,16 @@ export function openStore({ filename, key }) {
     if (!d) throw new StoreError(404);
     return d;
   };
+  // Call only inside the write transaction: the same Page's post must not be
+  // attributed to two draft attempts, even when projects share that Page.
+  const ensurePostUnassigned = (projectId, draftId, postUrl) => {
+    const duplicate = stmt(`SELECT 1 FROM drafts d
+      JOIN projects owner ON owner.id = d.project_id
+      JOIN projects current ON current.id = ?
+      WHERE owner.organization_id = current.organization_id
+        AND d.post_url = ? AND d.id <> ? LIMIT 1`).get(projectId, postUrl, draftId);
+    if (duplicate) throw new StoreError(409);
+  };
   const project = (p) => ({
     id: p.id,
     name: p.name,
@@ -283,6 +293,7 @@ export function openStore({ filename, key }) {
           throw new StoreError(409);
         if (outcome.status === "published" && (!outcome.postUrl || !outcome.publishedAt))
           throw new StoreError(409);
+        if (outcome.status === "published") ensurePostUnassigned(pid, id, outcome.postUrl);
         stmt(
           "UPDATE drafts SET status=?,revision=revision+1,updated_at=?,post_url=?,published_at=?,publish_started_at=?,error=? WHERE project_id=? AND id=?",
         ).run(
@@ -310,6 +321,7 @@ export function openStore({ filename, key }) {
           !publishedAt
         )
           throw new StoreError(409);
+        ensurePostUnassigned(pid, id, postUrl);
         stmt(
           "UPDATE drafts SET status='published',revision=revision+1,updated_at=?,post_url=?,published_at=?,error=NULL WHERE project_id=? AND id=?",
         ).run(now(), postUrl, publishedAt, pid, id);

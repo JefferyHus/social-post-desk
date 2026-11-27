@@ -71,20 +71,18 @@ a {
   color: #a5cbc2;
 }
 .brand-mark {
-  width: 42px;
-  height: 42px;
-  border-radius: 13px;
-  background: #b6e8d4;
-  color: #173d38;
-  display: grid;
-  place-items: center;
-  font-size: 25px;
-  font-weight: 800;
-  letter-spacing: -0.12em;
-  padding-right: 3px;
+  display: block;
+  object-fit: contain;
+  flex-shrink: 0;
 }
-.brand-mark span {
-  color: #419786;
+.demo-banner {
+  margin: 0;
+  padding: 9px 24px;
+  color: #284b40;
+  background: #e4f0e8;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: center;
 }
 .sidebar-section {
   margin-top: 72px;
@@ -517,6 +515,16 @@ textarea {
   font-size: 11px;
   color: #799087;
 }
+.report-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+.report-tools .section-note { margin: 0; }
+.report-help { color: #6f837b; font-size: 11px; line-height: 1.5; margin: 0 0 15px; }
 .performance select {
   font-size: 11px;
   max-width: 125px;
@@ -684,7 +692,6 @@ dialog::backdrop {
   .brand-mark {
     width: 36px;
     height: 36px;
-    font-size: 21px;
   }
   .sidebar-section {
     display: flex;

@@ -24,6 +24,8 @@ const assets = new Map([
   ["/", ["index.html", "text/html; charset=utf-8"]],
   ["/styles.css", ["styles.css", "text/css; charset=utf-8"]],
   ["/app.js", ["app.js", "text/javascript; charset=utf-8"]],
+  ["/report-csv.js", ["report-csv.js", "text/javascript; charset=utf-8"]],
+  ["/brand-mark.png", ["brand-mark.png", "image/png"]],
 ]);
 
 const hash = (value) => createHash("sha256").update(value).digest();
@@ -449,6 +451,7 @@ export function createApp({ config, store, linkedin, now = Date.now }) {
       return send(response, 200, {
         authenticated: Boolean(auth),
         redirectUri: auth ? (config.linkedin?.redirectUri ?? null) : null,
+        demo: config.demo === true,
       });
     }
     if (url.pathname === "/api/login" && method === "POST") return login(request, response);

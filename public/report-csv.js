@@ -1,0 +1,50 @@
+const METRICS = ["impressions", "clicks", "reactions", "comments", "shares"];
+const HEADERS = [
+  "project", "scope", "window_start_utc_inclusive", "window_end_utc_exclusive",
+  "post_urn", "post_url", "post_published_at", "post_body", "metrics_availability",
+  ...METRICS, "warnings",
+];
+
+// Spreadsheet applications may evaluate text after whitespace or control characters.
+function csvCell(value) {
+  if (value === null || value === undefined) return '""';
+  let text = String(value);
+  if (typeof value !== "number" && (/^[\t\r\n]/.test(text) || /^[\s\u0000-\u001f\u007f]*[=+\-@]/u.test(text))) {
+    text = `'${text}`;
+  }
+  return `"${text.replaceAll('"', '""')}"`;
+}
+function metricValues(metrics) {
+  const values = METRICS.map((key) => {
+    const value = metrics?.[key];
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  });
+  const present = values.filter((value) => value !== null).length;
+  return { values, availability: present === 0 ? "unavailable" : present === METRICS.length ? "available" : "partial" };
+}
+
+/** Build a CSV from the report already loaded in the browser; no network access. */
+export function reportCsv(project, report) {
+  if (!project || !report) throw new Error("A loaded report and project are required.");
+  const aggregate = metricValues(report.totals);
+  const rows = [HEADERS, [
+    project.name, "selected_window_aggregate", report.from, report.to,
+    null, null, null, null, aggregate.availability, ...aggregate.values,
+    Array.isArray(report.warnings) ? report.warnings.join("\n") : "",
+  ]];
+  for (const post of report.posts || []) {
+    const lifetime = metricValues(post.metrics);
+    rows.push([
+      project.name, "post_lifetime", null, null, post.urn, post.url,
+      post.publishedAt, post.body, lifetime.availability, ...lifetime.values, null,
+    ]);
+  }
+  return `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
+}
+
+export function reportFilename(projectName, report) {
+  const name = String(projectName || "project").normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60).replace(/-+$/, "") || "project";
+  const day = typeof report?.from === "string" && /^\d{4}-\d{2}-\d{2}/.test(report.from) ? report.from.slice(0, 10) : "report";
+  return `social-report-${name}-${day}.csv`;
+}

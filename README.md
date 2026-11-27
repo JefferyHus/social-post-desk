@@ -1,6 +1,10 @@
+<img src="public/brand-mark.png" alt="" width="88" height="88">
+
 # Social Post Desk
 
 A private, self-hosted workspace for preparing posts, publishing to LinkedIn Company Pages, and reviewing organic performance. The source is open under the MIT License. The application uses Node.js and SQLite and has no dependencies on a paid reporting or publishing connector.
+
+[Watch the 22-second demo](https://github.com/JefferyHus/social-post-desk/releases/download/v0.2.0/social-post-desk-demo.mp4) · [Contribute](CONTRIBUTING.md)
 
 ## What it does
 
@@ -8,9 +12,14 @@ A private, self-hosted workspace for preparing posts, publishing to LinkedIn Com
 - Write a text or link post, review its exact content and company page, then publish it on demand.
 - Keep the LinkedIn permalink and check ambiguous publishing attempts without automatically resending them.
 - Look up the latest 20 company posts and their lifetime organic metrics. View company-wide totals for the last 7, 28, or 90 complete UTC days.
+- Download the selected project’s report as a CSV with page totals and per-post lifetime metrics.
 - Prepare and copy drafts before connecting LinkedIn. Use the official company page to publish manually when needed.
 
 The dashboard's date filter applies to company totals. The recent-post list and each post's lifetime metrics are separate views. If two projects use the same LinkedIn Page, each project's drafts and activity remain separate. LinkedIn returns the same page-level totals and recent company posts for both connections.
+
+## Try the demo
+
+Run `npm run demo` with Node.js 24 or later. Open [the demo](http://127.0.0.1:3010) and sign in with `social-desk-demo`. It runs on loopback with fictional projects, an in-memory database, and a simulated LinkedIn provider. Demo changes reset on restart.
 
 ## Run a private instance
 

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light">
     <title>Social Post Desk</title>
+    <link rel="icon" href="/brand-mark.png" type="image/png">
     <link rel="stylesheet" href="/styles.css">
     <script type="module" src="/app.js"></script>
   </head>
@@ -12,7 +13,7 @@
     <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
     <main id="login" class="login-view" hidden>
       <section class="login-card">
-        <div class="brand-mark" aria-hidden="true">S<span>.</span></div>
+        <img class="brand-mark" src="/brand-mark.png" alt="" width="42" height="42">
         <h1>Social Post Desk</h1>
         <p>Sign in to manage your projects, prepare posts and follow their performance.</p>
         <form id="login-form" class="stack">
@@ -27,7 +28,7 @@
     <div id="app" class="app" hidden>
       <aside class="sidebar">
         <a class="brand" href="/" aria-label="Social Post Desk home">
-          <span class="brand-mark">S<span>.</span></span>
+          <img class="brand-mark" src="/brand-mark.png" alt="" width="42" height="42">
           <span>
             Social Post<br>
             <b>Desk</b>
@@ -76,6 +77,7 @@
             </button>
           </div>
         </header>
+        <p id="demo-banner" class="demo-banner" hidden>Fictional data · publishing is simulated</p>
         <div class="content">
           <section class="intro" id="overview">
             <div><h1>Publishing overview</h1></div>
@@ -174,7 +176,8 @@
                       <option value="90">Last 90 days</option>
                     </select>
                   </div>
-                  <p id="report-period" class="section-note">Organic page activity</p>
+                  <div class="report-tools"><p id="report-period" class="section-note">Organic page activity</p><button id="export-report" class="button outline small" type="button" disabled>Download CSV</button></div>
+                  <p class="report-help">Totals cover the selected window; post metrics are lifetime. Unavailable values are left blank in the CSV.</p>
                   <div id="metrics" class="metrics"></div>
                   <div id="report-warnings" class="warnings"></div>
                   <h3 class="recent-heading">Recent posts</h3>
@@ -222,7 +225,7 @@
       <div class="dialog-inner">
         <h2>Publish to LinkedIn</h2>
         <p id="publish-page"></p>
-        <p>Confirm the page and text below. This action publishes publicly.</p>
+        <p id="publish-confirmation">Confirm the page and text below. This action publishes publicly.</p>
         <div id="publish-preview" class="publish-preview"></div>
         <div class="dialog-actions">
           <button type="button" class="button outline" data-close="publish-dialog">Cancel</button>
