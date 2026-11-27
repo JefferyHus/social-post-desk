@@ -821,3 +821,11 @@ dialog::backdrop {
   .ga-report { padding: 20px; }
   .ga-report .section-head { align-items: flex-start; flex-wrap: wrap; }
 }
+
+.op-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 14px; margin: 18px 0; }
+.op-filters > div { display: grid; gap: 6px; }
+.op-filters input { width: 145px; max-width: 100%; }
+.op-filters p { margin: 0 0 9px; }
+.op-table { min-width: 760px; }
+.op-table td:first-child, .op-table td:nth-child(2) { max-width: 280px; }
+.op-table a { color: #277765; overflow-wrap: anywhere; }

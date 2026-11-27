@@ -25,6 +25,8 @@ const assets = new Map([
   ["/styles.css", ["styles.css", "text/css; charset=utf-8"]],
   ["/app.js", ["app.js", "text/javascript; charset=utf-8"]],
   ["/report-csv.js", ["report-csv.js", "text/javascript; charset=utf-8"]],
+  ["/seo-opportunities.js", ["seo-opportunities.js", "text/javascript; charset=utf-8"]],
+  ["/seo-opportunities-ui.js", ["seo-opportunities-ui.js", "text/javascript; charset=utf-8"]],
   ["/brand-mark.png", ["brand-mark.png", "image/png"]],
 ]);
 
@@ -682,6 +684,19 @@ export function createApp({ config, store, linkedin, ga4 = null, gsc = null, now
       if (session.gscselection?.projectId === projectId)
         session.gscselection = null;
       return send(response, 200, projectView(store.getProject(projectId)));
+    }
+    if (tail === "gsc/opportunities" && method === "GET") {
+      const days = Number(url.searchParams.get("days") ?? "28");
+      if (![7, 28, 90].includes(days)) throw new RequestError(400, "Choose 7, 28 or 90 days.");
+      try {
+        const credentials = await gscToken(projectId);
+        const result = await gsc.opportunities(credentials.accessToken, credentials.siteUrl, days);
+        assertGscCurrent(projectId, credentials.state, credentials.siteUrl);
+        return send(response, 200, result);
+      } catch (error) {
+        if (error instanceof RequestError) throw error;
+        throw new RequestError(502, "Search Console opportunities are unavailable. Check the connection and permissions.");
+      }
     }
     if (tail === "gsc/report" && method === "GET") {
       const days = Number(url.searchParams.get("days") ?? "28");

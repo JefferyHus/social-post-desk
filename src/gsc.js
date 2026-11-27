@@ -1,3 +1,5 @@
+import { queryOpportunities } from "./seo-opportunities.js";
+
 const SCOPE = "https://www.googleapis.com/auth/webmasters.readonly";
 const OAUTH = "https://oauth2.googleapis.com/token";
 const API = "https://www.googleapis.com/webmasters/v3";
@@ -141,6 +143,11 @@ export function createGsc({
             permissionLevel: x.permissionLevel,
           });
       return [...sites.values()];
+    },
+    async opportunities(accessToken, siteUrl, days) {
+      if (!validSite(siteUrl) || ![7, 28, 90].includes(days) || typeof accessToken !== "string" || !accessToken) throw new GscError(400);
+      try { return await queryOpportunities(request, accessToken, siteUrl, days, now()); }
+      catch (error) { if (error instanceof GscError) throw error; throw new GscError(); }
     },
     async report(accessToken, siteUrl, days) {
       if (!validSite(siteUrl) || ![7, 28, 90].includes(days))
