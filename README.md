@@ -79,3 +79,65 @@ See [SECURITY.md](SECURITY.md) before deploying remotely.
 Run `npm test`. Tests use synthetic credentials, disposable databases and mocked LinkedIn and Google Analytics APIs. No test connects to a real Page or publishes a live post.
 
 Provider references: [LinkedIn OAuth](https://learn.microsoft.com/en-us/linkedin/shared/authentication/authorization-code-flow), [Posts API](https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api), and [Organization Share Statistics](https://learn.microsoft.com/en-us/linkedin/marketing/community-management/organizations/share-statistics).
+
+## Local read-only MCP reporting (optional)
+
+A local MCP host can list its authorized project and read aggregate GA4 or LinkedIn metrics for 7, 28 or 90 days. GA4 uses the property's reporting timezone. LinkedIn uses a UTC interval. Null means a value is unavailable. Each grant covers one project and expires after 1, 7 or 30 days. The app stores the grant's SHA-256 digest and checks revocation before returning a report.
+
+The bridge runs as a local child process and talks to an opt-in listener bound to `127.0.0.1`. Keep the listener on the same machine as the bridge and outside your reverse proxy. Any local process with the grant can read the permitted aggregates until expiry or revocation. The agent host may send tool results to its model provider. Choose a host and model service approved for the project's reporting data.
+
+1. With Node.js 24 or newer, run `cd mcp && npm ci --omit=dev --ignore-scripts` to install the optional bridge dependencies.
+2. Set `MCP_REPORT_PORT=3011` in the server's private `.env` and restart the app. Choose a free port distinct from the app's port. An empty value disables the listener.
+3. Sign in, select the project and open **Project settings → Local reporting access**. Choose a lifetime and create a grant. Copy the secret while it is visible. Use the same panel to revoke it.
+4. Save the secret in an owner-only file outside the checkout. For example, create an empty private file, set its permissions with `chmod 600 /absolute/private/path/report-grant`, then paste the secret into it with your editor. Give the MCP host the file path. Remove the file after revocation.
+
+### OpenAI Agents SDK (local stdio)
+
+In an application on the same machine, after installing `@openai/agents` in that application's own environment:
+
+```js
+import { Agent, MCPServerStdio } from "@openai/agents";
+
+const reports = new MCPServerStdio({
+  name: "Social Post Desk reports",
+  clientSessionTimeoutSeconds: 45,
+  command: "/absolute/path/to/node", // Node 24+
+  args: ["/absolute/path/to/social-post-desk/mcp/server.js"],
+  env: {
+    SOCIAL_DESK_MCP_PORT: "3011",
+    SOCIAL_DESK_MCP_TOKEN_FILE: "/absolute/private/path/report-grant",
+  },
+});
+await reports.connect();
+try {
+  const agent = new Agent({ name: "Reporting assistant", mcpServers: [reports] });
+  // Use the agent with your own run() call.
+} finally {
+  await reports.close();
+}
+```
+
+### Claude Desktop and Claude Code
+
+For Claude Desktop, add an entry to your local `claude_desktop_config.json`, substitute absolute paths, then fully restart Claude Desktop. Use the private grant file's path in the following configuration.
+
+```json
+{
+  "mcpServers": {
+    "social-post-desk": {
+      "command": "/absolute/path/to/node",
+      "args": ["/absolute/path/to/social-post-desk/mcp/server.js"],
+      "env": {
+        "SOCIAL_DESK_MCP_PORT": "3011",
+        "SOCIAL_DESK_MCP_TOKEN_FILE": "/absolute/private/path/report-grant"
+      }
+    }
+  }
+}
+```
+
+For Claude Code, register the same command and environment in your user-scoped configuration. Use `/mcp` to verify the listed tools. [Claude Code MCP setup](https://code.claude.com/docs/en/mcp)
+
+This setup supports local stdio hosts. Hosted OpenAI Responses and Anthropic Messages connectors require a separately deployed, reachable HTTP MCP server with TLS, OAuth resource-server authorization, user and project scopes, and audit controls. [OpenAI MCP transports](https://openai.github.io/openai-agents-js/guides/mcp/), [Anthropic Messages MCP connector](https://platform.claude.com/docs/en/agents-and-tools/mcp-connector)
+
+For a fictional end-to-end demo, run `SOCIAL_DESK_DEMO_MCP_REPORT_PORT=3011 npm run demo`, create a grant for Example Studio, and connect a local host as above. The listener and all its data are synthetic. To run the isolated SDK interoperability tests, install development dependencies in `mcp` with `npm ci --ignore-scripts`, then run `npm test` there. Tests use mock providers and localhost only.

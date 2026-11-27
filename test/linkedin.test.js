@@ -214,3 +214,11 @@ test("organization verification follows only locally constructed pagination offs
   assert.equal(calls[1].url.origin, "https://api.linkedin.com");
   assert.equal(calls[1].url.searchParams.get("start"), "100");
 });
+
+test("aggregate-only report makes one statistics request and never fetches posts", async () => {
+  const { api, calls } = setup(() => reply({ elements: [{ totalShareStatistics: stats }] }));
+  const report = await api.aggregateReport("synthetic", org, 7);
+  assert.equal(calls.length, 1); assert.match(calls[0].url.pathname, /organizationalEntityShareStatistics$/);
+  assert.equal(report.totals.impressions, 10); assert.equal(report.totals.clicks, 2); assert.equal(report.posts, undefined);
+  await assert.rejects(api.aggregateReport("synthetic", org, 14), LinkedInError); assert.equal(calls.length, 1);
+});

@@ -71,6 +71,11 @@ export function openStore({ filename, key }) {
       project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
       property_id TEXT NOT NULL, token_nonce BLOB NOT NULL, token_ciphertext BLOB NOT NULL, token_tag BLOB NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS mcp_grants (
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS mcp_grants_project ON mcp_grants(project_id);
     CREATE INDEX IF NOT EXISTS drafts_project_created ON drafts(project_id, created_at DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS drafts_project_published_url ON drafts(project_id, post_url) WHERE post_url IS NOT NULL;
   `);
@@ -266,6 +271,31 @@ export function openStore({ filename, key }) {
       });
     },
     disconnectGa4(id) { needProject(id); stmt("DELETE FROM ga4_connections WHERE project_id=?").run(id); },
+    listMcpGrants(pid) {
+      needProject(pid);
+      return stmt("SELECT id, created_at, expires_at FROM mcp_grants WHERE project_id=? ORDER BY created_at DESC").all(pid)
+        .map(row => ({ id: row.id, createdAt: row.created_at, expiresAt: row.expires_at }));
+    },
+    createMcpGrant(pid, tokenHash, createdAt, expiresAt) {
+      return tx(() => {
+        needProject(pid);
+        if (!/^[a-f0-9]{64}$/.test(tokenHash) || !Number.isSafeInteger(createdAt) || !Number.isSafeInteger(expiresAt) || expiresAt <= createdAt) throw new StoreError(400, "Invalid grant.");
+        stmt("DELETE FROM mcp_grants WHERE project_id=? AND expires_at <= ?").run(pid, createdAt);
+        if (stmt("SELECT count(*) AS n FROM mcp_grants WHERE project_id=?").get(pid).n >= 20) throw new StoreError(409, "Revoke an existing grant before creating another.");
+        const id = randomUUID();
+        stmt("INSERT INTO mcp_grants(id,project_id,token_hash,created_at,expires_at) VALUES (?,?,?,?,?)").run(id, pid, tokenHash, createdAt, expiresAt);
+        return { id, createdAt, expiresAt };
+      });
+    },
+    findMcpGrant(tokenHash, timestamp) {
+      if (!/^[a-f0-9]{64}$/.test(tokenHash) || !Number.isSafeInteger(timestamp)) return null;
+      const row = stmt("SELECT id, project_id, expires_at FROM mcp_grants WHERE token_hash=? AND expires_at > ?").get(tokenHash, timestamp);
+      return row ? { id: row.id, projectId: row.project_id, expiresAt: row.expires_at } : null;
+    },
+    revokeMcpGrant(pid, id) {
+      needProject(pid);
+      if (!stmt("DELETE FROM mcp_grants WHERE project_id=? AND id=?").run(pid, id).changes) throw new StoreError(404);
+    },
     listDrafts(pid) {
       needProject(pid);
       return stmt("SELECT * FROM drafts WHERE project_id=? ORDER BY created_at DESC, id DESC")

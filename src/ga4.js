@@ -270,6 +270,25 @@ export function createGa4({
 				false,
 			);
 		},
+		async aggregateReport(accessToken, propertyId, days) {
+      if (!nonempty(accessToken) || !/^[1-9]\d{0,19}$/.test(String(propertyId ?? "")) || ![7, 28, 90].includes(days)) throw new GA4Error(400);
+      const startedAt = now();
+      const report = await request(`${DATA_API}/properties/${String(propertyId)}:runReport`, {
+        method: "POST", headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ dateRanges: [{ startDate: `${days}daysAgo`, endDate: "yesterday" }], metrics: TOTAL_METRICS.map(name => ({ name })), limit: "1" }),
+      });
+      if (!report || typeof report !== "object" || (report.rows != null && !Array.isArray(report.rows))) throw new GA4Error();
+      const indices = namedColumns(report, "metricHeaders", TOTAL_METRICS), restricted = restrictions(report);
+      const warnings = new Set(); sourceWarnings(report, "Totals", warnings);
+      if (!report.rows?.length) warnings.add("Totals: no data was returned.");
+      const zone = nonempty(report.metadata?.timeZone, 128) ? report.metadata.timeZone : null;
+      const before = zone ? reportDates(zone, days, startedAt) : null;
+      const after = zone ? reportDates(zone, days, now()) : null;
+      const dates = before && after && before[0] === after[0] && before.at(-1) === after.at(-1) ? after : null;
+      if (!dates) warnings.add("Property timezone or exact dates are unavailable.");
+      return { days, timezone: dates ? zone : null, startDate: dates?.[0] ?? null, endDate: dates?.at(-1) ?? null,
+        totals: Object.fromEntries(TOTAL_METRICS.map(name => [name, metric(report.rows?.[0], indices, name, restricted)])), warnings: [...warnings] };
+    },
 		async report(accessToken, propertyId, days) {
 			if (
 				!nonempty(accessToken) ||

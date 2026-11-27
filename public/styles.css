@@ -821,3 +821,9 @@ dialog::backdrop {
   .ga-report { padding: 20px; }
   .ga-report .section-head { align-items: flex-start; flex-wrap: wrap; }
 }
+
+#mcp-grants { border-top: 1px solid #dce8e2; margin-top: 16px; padding-top: 12px; }
+#mcp-grants h3 { margin: 0; font-size: 14px; }
+#mcp-secret-container { margin-top: 10px; }
+#mcp-secret { display: block; width: 100%; margin-top: 5px; }
+.mcp-grant-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }

@@ -241,6 +241,15 @@
           The organization ID cannot be changed after a connection or post exists. Verify it before
           connecting.
         </p>
+        <section id="mcp-grants" hidden aria-labelledby="mcp-title">
+          <h3 id="mcp-title">Local reporting access</h3>
+          <p class="small-text">A grant gives a local MCP host read-only access to this project's aggregate metrics until it expires or is revoked.</p>
+          <label for="mcp-days">Grant lifetime</label>
+          <select id="mcp-days"><option value="1">1 day</option><option value="7" selected>7 days</option><option value="30">30 days</option></select>
+          <button id="mcp-create" class="button outline small" type="button">Create grant</button>
+          <div id="mcp-secret-container" hidden><label for="mcp-secret">Copy this grant now. It will not be shown again.</label><input id="mcp-secret" type="text" readonly autocomplete="off"></div>
+          <div id="mcp-grant-list"></div>
+        </section>
         <div class="dialog-actions">
           <button type="button" class="button outline" data-close="project-dialog">Cancel</button>
           <button type="submit" class="button primary">Save project</button>
