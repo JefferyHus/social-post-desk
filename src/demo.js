@@ -193,6 +193,15 @@ const gsc = {
       expiresAt: demoGoogleExpiry(),
     };
   },
+  async opportunities(_token, siteUrl, days) {
+    if (siteUrl !== demoSite && siteUrl !== "https://example.org/") demoUnavailable();
+    const end = new Date(); end.setUTCDate(end.getUTCDate() - 3);
+    const start = new Date(end); start.setUTCDate(start.getUTCDate() - days + 1);
+    return { days, siteUrl, startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10), rows: [
+      { query: "how to plan a community workshop for beginners", page: "https://example.org/workshop", impressions: 145, clicks: 3, ctr: 3 / 145, position: 9.2 },
+      { query: "how to plan a community workshop for beginners", page: "https://example.org/resources", impressions: 72, clicks: 0, ctr: 0, position: 12.4 },
+    ], warnings: ["Fictional demo data; Google may omit rows."] };
+  },
   async report(_token, siteUrl, days) {
     if (siteUrl !== demoSite && siteUrl !== "https://example.org/")
       demoUnavailable();

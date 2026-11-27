@@ -11,6 +11,7 @@ https://github.com/user-attachments/assets/6e20a12b-07af-4601-8162-b01b8dac2bfc
 ## What it does
 
 - Keep separate drafts, publishing activity, and data source connections for multiple projects.
+- Review SEO opportunities in a separate view: Google filters finalized web queries to eight or more words before returning a bounded shortlist of page/query pairs. Adjust impression and CTR filters, then export the selected rows with the window and filters; edit pages manually. The shortlist can omit data and is not a complete ranking.
 - Connect a read-only Google Analytics 4 property per project. See active users, sessions, views, key events, daily traffic, acquisition channels and top pages. Export the selected 7-, 28- or 90-day report to CSV.
 - Write a text or link post, review its exact content and company page, then publish it on demand.
 - Keep the LinkedIn permalink and check ambiguous publishing attempts without automatically resending them.

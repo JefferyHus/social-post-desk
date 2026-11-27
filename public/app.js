@@ -1,3 +1,4 @@
+import { mountOpportunities } from "/seo-opportunities-ui.js";
 import { reportCsv, reportFilename, ga4ReportCsv, ga4ReportFilename, gscReportCsv, gscReportFilename } from "/report-csv.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -356,6 +357,7 @@ async function chooseProject(id) {
   state.ga4Error = null;
   state.ga4Loading = false;
   state.project = state.projects.find((p) => p.id === id) || null;
+  opportunities.projectChanged();
   state.selected = null;
   state.drafts = [];
   state.report = null;
@@ -446,6 +448,9 @@ async function logout() {
   state.ga4Loading = false;
   state.projects = [];
   state.project = null;
+  opportunities.hide();
+  opportunities.projectChanged();
+  showView("publishing");
   state.selected = null;
   state.drafts = [];
   state.report = null;
@@ -603,11 +608,13 @@ $("#export-report").addEventListener("click", () => {
 });
 $("#period").addEventListener("change", loadReport);
 function showView(view) {
-  const analytics = view === "analytics";
-  $("#publishing-view").hidden = analytics;
-  $("#connection-pill").hidden = analytics;
+  const analytics = view === "analytics", opView = view === "opportunities";
+  $("#publishing-view").hidden = analytics || opView;
+  $("#connection-pill").hidden = analytics || opView;
   $("#analytics-view").hidden = !analytics;
-  const active = $(analytics ? "#nav-analytics" : "#nav-overview");
+  $("#opportunities-view").hidden = !opView;
+  if (opView) opportunities.show(); else opportunities.hide();
+  const active = $(opView ? "#nav-opportunities" : analytics ? "#nav-analytics" : "#nav-overview");
   for (const item of document.querySelectorAll(".nav-item")) {
     item.classList.toggle("active", item === active);
     item.removeAttribute("aria-current");
@@ -615,9 +622,10 @@ function showView(view) {
   active.setAttribute("aria-current", "page");
   if (analytics && !state.ga4Loading && !state.ga4Report) void loadGa4Report();
   if (analytics) void loadGscReport();
-  if (analytics) window.scrollTo({ top: 0, behavior: "instant" });
+  if (analytics || opView) window.scrollTo({ top: 0, behavior: "instant" });
 }
 $("#nav-analytics").addEventListener("click", () => showView("analytics"));
+$("#nav-opportunities").addEventListener("click", () => showView("opportunities"));
 $("#nav-overview").addEventListener("click", () => {
   showView("publishing");
   window.scrollTo({ top: 0, behavior: "instant" });
@@ -945,4 +953,5 @@ $("#gsc-export").addEventListener("click", () => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 
+const opportunities = mountOpportunities({ api, project: () => state.project, showError });
 start().catch(showError);

@@ -48,6 +48,9 @@
             <span aria-hidden="true">▥</span>
             Analytics
           </button>
+          <button id="nav-opportunities" class="nav-item" type="button" aria-label="SEO opportunities">
+            <span aria-hidden="true">⌕</span> SEO opportunities
+          </button>
           <button id="nav-activity" class="nav-item" type="button">
             <span aria-hidden="true">◷</span>
             Activity
@@ -220,6 +223,21 @@
               </section>
             </div>
           </section>
+<section id="opportunities-view" aria-labelledby="op-title" hidden>
+  <div class="intro"><div><h1 id="op-title">SEO opportunities</h1><p>Review long searches where your pages already appear.</p></div></div>
+  <div id="op-empty" class="card empty-project" hidden><h2>Choose a project</h2><p>Select a project with a Search Console property.</p></div>
+  <div id="op-main" hidden>
+    <section class="card ga-report">
+      <div class="section-head"><div><h2>Long search queries</h2><p id="op-window" class="section-note">Web search · eight or more words</p></div><div class="ga-report-controls"><label class="sr-only" for="op-days">Search window</label><select id="op-days" aria-label="Search window"><option value="7">Last 7 days</option><option value="28" selected>Last 28 days</option><option value="90">Last 90 days</option></select><button id="op-export" class="button outline small" type="button" disabled>Download CSV</button></div></div>
+      <p class="report-help">Shortlist from rows returned by Google, which may be incomplete. Results are sorted by impressions among returned rows; rows without impressions or CTR are excluded. Use these to review pages; edits and publishing remain manual.</p>
+      <p id="op-connect-note" class="warning" hidden></p>
+      <div class="op-filters"><div><label for="op-min-impressions">Minimum impressions</label><input id="op-min-impressions" type="number" min="0" step="1" value="0"></div><div><label for="op-max-ctr">Maximum CTR (%)</label><input id="op-max-ctr" type="number" min="0" max="100" step="any" value="100"></div><p id="op-count" class="muted small-text"></p></div>
+      <p id="op-filter-error" class="warning" role="status"></p><div id="op-warnings" class="warnings" role="status"></div>
+      <p id="op-no-results" class="empty-state" hidden>No returned rows match these filters.</p>
+      <div id="op-table-wrap" class="ga-table-wrap" hidden><table class="ga-table op-table"><thead><tr><th scope="col">Query</th><th scope="col">Ranking page</th><th scope="col">Impressions</th><th scope="col">Clicks</th><th scope="col">CTR</th><th scope="col">Position</th></tr></thead><tbody id="op-table-body"></tbody></table></div>
+    </section>
+  </div>
+</section>
         </div>
       </main>
     </div>
