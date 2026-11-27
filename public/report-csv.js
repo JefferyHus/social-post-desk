@@ -66,3 +66,15 @@ export function ga4ReportFilename(name, days) {
   const safeName = reportFilename(name, {}).replace(/^social-report-/, "").replace(/-report\.csv$/, "");
   return `ga4-report-${safeName}-${[7, 28, 90].includes(days) ? days : "unknown"}-days.csv`;
 }
+
+/** Export exactly the displayed builder rows; metadata accompanies each data row. */
+export function ga4BuilderCsv(project, report) {
+  if (!project || !report) throw new Error("A loaded report and project are required.");
+  const headers = ["project", "start_date", "end_date", "timezone", "breakdown", "dimension", ...report.metrics, "warnings"];
+  const meta = [project.name, report.startDate, report.endDate, report.timezone, report.breakdown];
+  const warnings = (report.warnings || []).join("\n");
+  const rows = (report.rows || []).map(row => [...meta, row.dimension ?? (report.breakdown === "none" ? "Total" : "Unavailable"), ...report.metrics.map(m => row.metrics?.[m] ?? null), warnings]);
+  // An empty preview exports a metadata row, clearly identified as no data.
+  if (!rows.length) rows.push([...meta, "No data", ...report.metrics.map(() => null), warnings]);
+  return `\uFEFF${[headers, ...rows].map(row => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
+}

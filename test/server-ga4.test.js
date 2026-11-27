@@ -319,3 +319,22 @@ test("disconnect during report prevents the in-flight response being returned", 
 	assert.equal(response.status, 409);
 	assert.equal((await response.text()).includes('"sessions":4'), false);
 });
+
+test("custom reports validate on the server and saved templates cannot cross projects", async (t) => {
+  let received;
+  const f = await fixture(t, { async customReport(token, propertyId, spec) { received = { token, propertyId, spec }; return { rows: [], warnings: [], timezone: "UTC" }; } });
+  await f.login();
+  const a = await f.project("A"), b = await f.project("B");
+  f.store.setGa4Connection(a.id, { propertyId: "123", refreshToken: refreshSecret });
+  const spec = { breakdown: "channel", metrics: ["sessions"], dateRule: { kind: "preset", days: 28 } };
+  const base = `/api/projects/${a.id}/ga4`;
+  let res = await f.req(`${base}/templates`, "POST", { name: "Weekly", spec });
+  assert.equal(res.status, 201); const saved = await res.json();
+  res = await f.req(`/api/projects/${b.id}/ga4/templates/${saved.id}`, "PATCH", { name: "Other" }); assert.equal(res.status, 404);
+  res = await f.req(`/api/projects/${b.id}/ga4/templates/${saved.id}`, "DELETE"); assert.equal(res.status, 404);
+  res = await f.req(`${base}/custom-report`, "POST", { spec: { ...spec, metrics: ["screenPageViews"] } }); assert.equal(res.status, 400); assert.equal(received, undefined);
+  res = await f.req(`${base}/custom-report`, "POST", { spec }); assert.equal(res.status, 200); assert.equal(received.propertyId, "123"); assert.deepEqual(received.spec, spec);
+  res = await f.req(`${base}/templates/${saved.id}`, "PATCH", { name: "Renamed" }); assert.equal(res.status, 200); assert.equal((await res.json()).name, "Renamed");
+  res = await f.req(`${base}/templates/${saved.id}`, "DELETE"); assert.equal(res.status, 200);
+  res = await f.req(`${base}/templates`); assert.deepEqual(await res.json(), []);
+});

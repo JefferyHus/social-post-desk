@@ -821,3 +821,10 @@ dialog::backdrop {
   .ga-report { padding: 20px; }
   .ga-report .section-head { align-items: flex-start; flex-wrap: wrap; }
 }
+#ga-builder { margin-top: 22px; }
+#builder-form, .builder-templates { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+#builder-form fieldset { display: flex; gap: 14px; flex-wrap: wrap; width: 100%; border: 1px solid #dce8e2; border-radius: 8px; padding: 12px; }
+#builder-form fieldset label { display: inline-flex; align-items: center; gap: 5px; }
+#builder-form fieldset input { margin: 0; }
+#builder-dates:not([hidden]) { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.builder-templates { border-top: 1px solid #edf2ef; padding-top: 16px; }

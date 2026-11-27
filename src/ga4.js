@@ -1,3 +1,4 @@
+import { BREAKDOWNS, resolveDates, validateSpec, ReportValidationError } from "./ga4-builder.js";
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const DATA_API = "https://analyticsdata.googleapis.com/v1beta";
@@ -270,6 +271,32 @@ export function createGa4({
 				false,
 			);
 		},
+		async customReport(accessToken, propertyId, input) {
+      const spec = validateSpec(input);
+      if (!nonempty(accessToken) || !/^[1-9]\d{0,19}$/.test(String(propertyId ?? ""))) throw new GA4Error(400);
+      const run = (body) => request(`${DATA_API}/properties/${String(propertyId)}:runReport`, {
+        method: "POST", headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      // The property, not the browser, determines the calendar for validation.
+      const probe = await run({ dateRanges: [{ startDate: "yesterday", endDate: "yesterday" }], metrics: [{ name: "sessions" }], limit: "1" });
+      const timezone = probe?.metadata?.timeZone;
+      const dates = resolveDates(spec, timezone, now());
+      const dim = BREAKDOWNS[spec.breakdown].dimension;
+      const report = await run({ dateRanges: [dates], ...(dim ? { dimensions: [{ name: dim }] } : {}), metrics: spec.metrics.map(name => ({ name })), limit: "100", orderBys: [{ metric: { metricName: spec.metrics[0] }, desc: true }] });
+      if (!report || typeof report !== "object" || (report.rows != null && !Array.isArray(report.rows)) || report.metadata?.timeZone !== timezone) throw new GA4Error();
+      const finalDates = resolveDates(spec, timezone, now());
+      if (dates.startDate !== finalDates.startDate || dates.endDate !== finalDates.endDate) throw new ReportValidationError("The property date changed while loading. Please retry.");
+      const warnings = new Set(); sourceWarnings(report, "Report", warnings);
+      const indices = namedColumns(report, "metricHeaders", spec.metrics);
+      const dimensions = dim ? namedColumns(report, "dimensionHeaders", [dim]) : {};
+      const restricted = restrictions(report);
+      const rows = (report.rows ?? []).slice(0, 100).map(row => ({
+        dimension: dim ? dimension(row, dimensions, dim) : null,
+        metrics: Object.fromEntries(spec.metrics.map(name => [name, metric(row, indices, name, restricted)])),
+      }));
+      if (!rows.length) warnings.add("No data was returned for these dates and fields.");
+      return { ...dates, timezone, breakdown: spec.breakdown, metrics: spec.metrics, rows, warnings: [...warnings] };
+    },
 		async report(accessToken, propertyId, days) {
 			if (
 				!nonempty(accessToken) ||

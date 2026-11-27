@@ -1,3 +1,4 @@
+import { resolveDates, validateSpec } from "./ga4-builder.js";
 import { randomBytes } from "node:crypto";
 import { loadConfig } from "./config.js";
 import { LinkedInError } from "./linkedin.js";
@@ -121,6 +122,14 @@ const ga4 = {
   async refresh(refreshToken) {
     if (refreshToken !== demoGoogleTokens.refreshToken) demoUnavailable();
     return { accessToken: demoGoogleTokens.accessToken, expiresAt: demoGoogleExpiry() };
+  },
+  async customReport(_accessToken, propertyId, input) {
+    if (propertyId !== demoPropertyId) demoUnavailable();
+    const spec = validateSpec(input), dates = resolveDates(spec, "UTC");
+    const samples = { none: [null], channel: ["Organic Search", "Direct"], sourceMedium: ["example / organic", "(direct) / (none)"], campaign: ["Fictional campaign"], page: ["/", "/workshop-checklist"] };
+    return { ...dates, timezone: "UTC", breakdown: spec.breakdown, metrics: spec.metrics,
+      rows: samples[spec.breakdown].map((dimension, index) => ({ dimension, metrics: Object.fromEntries(spec.metrics.map((key, i) => [key, 120 - index * 35 + i * 10])) })),
+      warnings: ["Fictional demo data. No Google request was made."] };
   },
   async report(_accessToken, propertyId, days) {
     if (propertyId !== demoPropertyId) demoUnavailable();

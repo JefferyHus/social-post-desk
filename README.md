@@ -11,7 +11,7 @@ https://github.com/user-attachments/assets/6e20a12b-07af-4601-8162-b01b8dac2bfc
 ## What it does
 
 - Keep separate drafts, publishing activity, and data source connections for multiple projects.
-- Connect a read-only Google Analytics 4 property per project. See active users, sessions, views, key events, daily traffic, acquisition channels and top pages. Export the selected 7-, 28- or 90-day report to CSV.
+- Connect a read-only Google Analytics 4 property per project. See active users, sessions, views, key events, daily traffic, acquisition channels and top pages. Export the selected 7-, 28- or 90-day report to CSV. Build an on-demand custom report with selected metrics, breakdowns and dates, and save its definition per project.
 - Write a text or link post, review its exact content and company page, then publish it on demand.
 - Keep the LinkedIn permalink and check ambiguous publishing attempts without automatically resending them.
 - Look up the latest 20 company posts and their lifetime organic metrics. View company-wide totals for the last 7, 28, or 90 complete UTC days.
@@ -22,7 +22,7 @@ The LinkedIn date filter applies to company totals. The recent-post list and eac
 
 ## Try the demo
 
-Run `npm run demo` with Node.js 24 or later. Open [the demo](http://127.0.0.1:3010) and sign in with `social-desk-demo`. It runs on loopback with fictional projects, an in-memory database and simulated LinkedIn and Google Analytics providers. Open **Analytics** for the example website report. To try a simulated connection, select **Example Workshop** and enter property ID `4242001`. Demo changes reset on restart.
+Run `npm run demo` with Node.js 24 or later. Open [the demo](http://127.0.0.1:3010) and sign in with `social-desk-demo`. It runs on loopback with fictional projects, an in-memory database and simulated LinkedIn and Google Analytics providers. Open **Analytics** for the example website report and custom report builder; all demo report data is fictional. To try a simulated connection, select **Example Workshop** and enter property ID `4242001`. Demo changes reset on restart.
 
 ## Run a private instance
 
@@ -62,6 +62,8 @@ An unconfirmed publish is held for review. **Check status** looks for exactly on
 3. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the private server environment, then restart the app. If the OAuth app is in testing mode, add your Google account as a test user. Google may require consent verification for a broader rollout.
 4. In Social Post Desk, select a project and open **Analytics**. Enter the numeric GA4 property ID shown in Google Analytics Admin under **Property details**, then choose **Connect Google Analytics**. Sign in with a Google account that can view that property. The grant requests only `analytics.readonly`.
 5. Select a period and view or export the report. GA4 uses the property's reporting timezone and includes the selected number of days through yesterday. Recent values may still be processing. Counts suppressed or omitted by Google appear as unavailable.
+
+The custom report builder offers 7-, 28- and 90-day presets or an exact range within the last 90 completed days in the property's timezone. Choose totals with active users, sessions, views and key events; channel, session source/medium or session campaign with sessions and key events; or page path with views. This deliberately limited catalog avoids unsupported combinations. Save, load, rename or delete up to 50 templates per project. A template stores its name, fields and date rule, not report data; custom dates may become too old and need editing when rerun. Preview fetches data on demand, at most 100 rows, and shows Google warnings, dates and timezone. The CSV is created locally from that preview, includes the same report rows and metadata, and prefixes potentially executable spreadsheet cells. An empty report produces a clearly marked metadata row. A dash or an empty CSV metric means unavailable, never an assumed zero. The builder makes two read-only Data API requests per preview: one obtains the property timezone and the other runs the selected report.
 
 Each project has one Google Analytics connection. Disconnecting removes its saved grant from this instance. To revoke Google's grant as well, use your Google Account's third-party connections settings. That can affect other projects connected to the same OAuth app and Google account.
 

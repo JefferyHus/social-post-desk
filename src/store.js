@@ -71,6 +71,11 @@ export function openStore({ filename, key }) {
       project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
       property_id TEXT NOT NULL, token_nonce BLOB NOT NULL, token_ciphertext BLOB NOT NULL, token_tag BLOB NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS ga4_templates (
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, spec TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ga4_templates_project ON ga4_templates(project_id);
     CREATE INDEX IF NOT EXISTS drafts_project_created ON drafts(project_id, created_at DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS drafts_project_published_url ON drafts(project_id, post_url) WHERE post_url IS NOT NULL;
   `);
@@ -266,6 +271,29 @@ export function openStore({ filename, key }) {
       });
     },
     disconnectGa4(id) { needProject(id); stmt("DELETE FROM ga4_connections WHERE project_id=?").run(id); },
+    listGa4Templates(pid) {
+      needProject(pid);
+      return stmt("SELECT * FROM ga4_templates WHERE project_id=? ORDER BY created_at DESC, id DESC").all(pid).map(t => ({ id: t.id, name: t.name, spec: JSON.parse(t.spec), createdAt: t.created_at, updatedAt: t.updated_at }));
+    },
+    createGa4Template(pid, name, spec) {
+      return tx(() => {
+        needProject(pid);
+        if (stmt("SELECT count(*) AS n FROM ga4_templates WHERE project_id=?").get(pid).n >= 50) throw new StoreError(409, "A project can have at most 50 saved reports.");
+        const id = randomUUID(), timestamp = now();
+        stmt("INSERT INTO ga4_templates(id,project_id,name,spec,created_at,updated_at) VALUES (?,?,?,?,?,?)").run(id, pid, name, JSON.stringify(spec), timestamp, timestamp);
+        return { id, name, spec, createdAt: timestamp, updatedAt: timestamp };
+      });
+    },
+    renameGa4Template(pid, id, name) {
+      needProject(pid);
+      const changed = stmt("UPDATE ga4_templates SET name=?, updated_at=? WHERE project_id=? AND id=?").run(name, now(), pid, id);
+      if (!changed.changes) throw new StoreError(404);
+      return this.listGa4Templates(pid).find(t => t.id === id);
+    },
+    deleteGa4Template(pid, id) {
+      needProject(pid);
+      if (!stmt("DELETE FROM ga4_templates WHERE project_id=? AND id=?").run(pid, id).changes) throw new StoreError(404);
+    },
     listDrafts(pid) {
       needProject(pid);
       return stmt("SELECT * FROM drafts WHERE project_id=? ORDER BY created_at DESC, id DESC")

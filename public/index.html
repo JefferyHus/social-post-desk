@@ -212,6 +212,31 @@
                 <div class="ga-breakdowns"><div><h3>Acquisition channels</h3><div id="ga-channels" class="ga-table-wrap"></div></div><div><h3>Top pages</h3><div id="ga-pages" class="ga-table-wrap"></div></div></div>
                 <p class="report-help">A dash means data is unavailable. Views include pages and screens tracked in the property.</p>
               </section>
+              <section id="ga-builder" class="card ga-report" aria-labelledby="ga-builder-title" hidden>
+                <h2 id="ga-builder-title">Custom analytics report</h2>
+                <p class="section-note">Choose completed dates within the last 90 days in the property timezone. Available metrics depend on the breakdown.</p>
+                <form id="builder-form">
+                  <label for="builder-period">Date range</label>
+                  <select id="builder-period"><option value="7">Last 7 days</option><option value="28" selected>Last 28 days</option><option value="90">Last 90 days</option><option value="custom">Custom dates</option></select>
+                  <span id="builder-dates" hidden><label for="builder-start">Start date</label> <input id="builder-start" type="date"> <label for="builder-end">End date</label> <input id="builder-end" type="date"></span>
+                  <label for="builder-breakdown">Breakdown</label>
+                  <select id="builder-breakdown"><option value="none">Totals</option><option value="channel">Channel</option><option value="sourceMedium">Source / medium</option><option value="campaign">Campaign</option><option value="page">Page path</option></select>
+                  <fieldset><legend>Metrics</legend>
+                    <label><input type="checkbox" name="builder-metric" value="activeUsers" checked> Active users</label>
+                    <label><input type="checkbox" name="builder-metric" value="sessions" checked> Sessions</label>
+                    <label><input type="checkbox" name="builder-metric" value="screenPageViews" checked> Views</label>
+                    <label><input type="checkbox" name="builder-metric" value="keyEvents" checked> Key events</label>
+                  </fieldset>
+                  <button class="button primary small" type="submit">Preview report</button>
+                  <button id="builder-export" class="button outline small" type="button" disabled>Download preview CSV</button>
+                </form>
+                <div class="builder-templates"><label for="builder-name">Report name</label> <input id="builder-name" maxlength="80" placeholder="Report name"> <button id="builder-save" class="button outline small" type="button">Save template</button>
+                  <label for="builder-saved">Saved templates</label> <select id="builder-saved"><option value="">Choose a saved report</option></select>
+                  <button id="builder-load" class="button outline small" type="button">Load</button> <button id="builder-rename" class="button outline small" type="button">Rename</button> <button id="builder-delete" class="button outline small" type="button">Delete</button>
+                </div>
+                <div id="builder-status" role="status"></div><div id="builder-result" class="ga-table-wrap"></div>
+                <p class="report-help">A dash means a value is unavailable. The preview and CSV contain the same rows, up to 100. Google warnings accompany the export.</p>
+              </section>
             </div>
           </section>
         </div>
