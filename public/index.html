@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>Social Post Desk</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+    <main id="login" class="login-view" hidden>
+      <section class="login-card">
+        <div class="brand-mark" aria-hidden="true">S<span>.</span></div>
+        <h1>Social Post Desk</h1>
+        <p>Sign in to manage your projects, prepare posts and follow their performance.</p>
+        <form id="login-form" class="stack">
+          <label for="password">Password</label>
+          <input id="password" type="password" autocomplete="current-password" required>
+          <button class="button primary" type="submit">
+            Sign in <span aria-hidden="true">→</span>
+          </button>
+        </form>
+      </section>
+    </main>
+    <div id="app" class="app" hidden>
+      <aside class="sidebar">
+        <a class="brand" href="/" aria-label="Social Post Desk home">
+          <span class="brand-mark">S<span>.</span></span>
+          <span>
+            Social Post<br>
+            <b>Desk</b>
+          </span>
+        </a>
+        <div class="sidebar-section">
+          <span class="sidebar-label">WORKSPACE</span>
+          <button id="nav-overview" class="nav-item active" type="button">
+            <span aria-hidden="true">◫</span>
+            Overview
+          </button>
+          <button id="nav-compose" class="nav-item" type="button">
+            <span aria-hidden="true">✎</span>
+            Compose
+          </button>
+          <button id="nav-activity" class="nav-item" type="button">
+            <span aria-hidden="true">◷</span>
+            Activity
+          </button>
+        </div>
+        <div class="sidebar-bottom">
+          <button id="logout" class="quiet-light" type="button">
+            Sign out <span aria-hidden="true">↗</span>
+          </button>
+        </div>
+      </aside>
+      <main class="main" id="main-content">
+        <header class="topbar">
+          <div>
+            <span class="top-label">WORKSPACE</span>
+            <div class="project-switch">
+              <label class="sr-only" for="project-select">Project</label>
+              <select id="project-select"></select>
+              <button id="new-project" class="icon-button" type="button" aria-label="Add project">
+                +
+              </button>
+            </div>
+          </div>
+          <div class="top-actions">
+            <span id="connection-pill" class="pill">No project</span>
+            <button id="settings-open" class="button outline small" type="button">
+              Project settings
+            </button>
+            <button id="logout-mobile" class="button outline small mobile-logout" type="button">
+              Sign out
+            </button>
+          </div>
+        </header>
+        <div class="content">
+          <section class="intro" id="overview">
+            <div><h1>Publishing overview</h1></div>
+            <button id="compose-shortcut" class="button primary" type="button">
+              ＋ &nbsp; Create a post
+            </button>
+          </section>
+          <section id="empty-project" class="card empty-project" hidden>
+            <h2>Start with a project</h2>
+            <p>Add a project to prepare posts for its LinkedIn page.</p>
+            <button id="empty-add" class="button primary" type="button">Add a project</button>
+          </section>
+          <div id="project-content" hidden>
+            <section class="connection card" aria-labelledby="connection-title">
+              <div class="connection-icon" aria-hidden="true">in</div>
+              <div class="connection-copy">
+                <h2 id="connection-title">LinkedIn page</h2>
+                <p id="connection-description"></p>
+                <a
+                  id="page-link"
+                  class="text-link"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  hidden
+                >
+                  Open LinkedIn page ↗
+                </a>
+              </div>
+              <div class="connection-actions">
+                <button id="connect" class="button primary small" type="button">
+                  Connect LinkedIn
+                </button>
+                <button id="disconnect" class="button outline small" type="button" hidden>
+                  Disconnect
+                </button>
+              </div>
+            </section>
+            <div class="dashboard-grid">
+              <div class="left-column">
+                <section class="card composer" id="compose" aria-labelledby="compose-title">
+                  <div class="section-head">
+                    <div><h2 id="compose-title">Compose a post</h2></div>
+                    <button id="new-draft" class="button ghost small" type="button">
+                      ＋ New draft
+                    </button>
+                  </div>
+                  <form id="draft-form" class="stack">
+                    <label for="draft-body">Post text</label>
+                    <textarea
+                      id="draft-body"
+                      rows="7"
+                      maxlength="3000"
+                      placeholder="What would you like to share?"
+                      required
+                    ></textarea>
+                    <div class="field-row">
+                      <div>
+                        <label for="link-url">Link URL <span>optional</span></label>
+                        <input id="link-url" type="url" placeholder="https://example.com">
+                      </div>
+                      <div>
+                        <label for="link-title">Link title <span>optional</span></label>
+                        <input id="link-title" maxlength="200" placeholder="A helpful title">
+                      </div>
+                    </div>
+                    <p id="draft-context" class="muted small-text">New draft</p>
+                    <div class="compose-actions">
+                      <button id="save-draft" type="submit" class="button outline">
+                        Save draft
+                      </button>
+                      <button id="publish" type="button" class="button primary" disabled>
+                        Review &amp; publish <span aria-hidden="true">→</span>
+                      </button>
+                      <button id="copy-draft" type="button" class="button ghost">Copy text</button>
+                    </div>
+                  </form>
+                </section>
+                <section class="card activity" id="activity">
+                  <div class="section-head">
+                    <div><h2>Activity</h2></div>
+                    <span class="muted small-text">Drafts &amp; publishing</span>
+                  </div>
+                  <div id="draft-list" class="list">
+                    <p class="empty-state">No drafts yet. Your saved posts will appear here.</p>
+                  </div>
+                </section>
+              </div>
+              <div class="right-column">
+                <section class="card performance" aria-labelledby="performance-title">
+                  <div class="section-head">
+                    <div><h2 id="performance-title">Performance</h2></div>
+                    <label class="sr-only" for="period">Report period</label>
+                    <select id="period" aria-label="Report period">
+                      <option value="7">Last 7 days</option>
+                      <option value="28" selected>Last 28 days</option>
+                      <option value="90">Last 90 days</option>
+                    </select>
+                  </div>
+                  <p id="report-period" class="section-note">Organic page activity</p>
+                  <div id="metrics" class="metrics"></div>
+                  <div id="report-warnings" class="warnings"></div>
+                  <h3 class="recent-heading">Recent posts</h3>
+                  <div id="post-list" class="post-list">
+                    <p class="empty-state">Connect a page to view reporting.</p>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+    <dialog id="project-dialog">
+      <form id="project-form" class="dialog-inner">
+        <div class="dialog-top">
+          <div><h2 id="project-dialog-title">New project</h2></div>
+          <button type="button" class="icon-button" data-close="project-dialog" aria-label="Close">
+            ×
+          </button>
+        </div>
+        <p class="section-note">
+          Use the numeric LinkedIn organization ID for the page you want to manage.
+        </p>
+        <label for="project-name">Project name</label>
+        <input id="project-name" required maxlength="80">
+        <label for="organization-id">LinkedIn organization ID <span>optional</span></label>
+        <input
+          id="organization-id"
+          inputmode="numeric"
+          pattern="[0-9]+"
+          placeholder="e.g. 12345678"
+        >
+        <p class="muted small-text">
+          The organization ID cannot be changed after a connection or post exists. Verify it before
+          connecting.
+        </p>
+        <div class="dialog-actions">
+          <button type="button" class="button outline" data-close="project-dialog">Cancel</button>
+          <button type="submit" class="button primary">Save project</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="publish-dialog">
+      <div class="dialog-inner">
+        <h2>Publish to LinkedIn</h2>
+        <p id="publish-page"></p>
+        <p>Confirm the page and text below. This action publishes publicly.</p>
+        <div id="publish-preview" class="publish-preview"></div>
+        <div class="dialog-actions">
+          <button type="button" class="button outline" data-close="publish-dialog">Cancel</button>
+          <button id="confirm-publish" type="button" class="button primary">Publish post</button>
+        </div>
+      </div>
+    </dialog>
+  </body>
+</html>
