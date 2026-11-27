@@ -4,7 +4,9 @@
 
 A private, self-hosted workspace for preparing posts, publishing to LinkedIn Company Pages, and reviewing organic performance. The source is open under the MIT License. The application uses Node.js and SQLite and has no dependencies on a paid reporting or publishing connector.
 
-[Watch the 22-second demo](https://github.com/JefferyHus/social-post-desk/releases/download/v0.2.0/social-post-desk-demo.mp4) · [Contribute](CONTRIBUTING.md)
+https://github.com/user-attachments/assets/05e49e04-f14b-4c79-969e-75c62d7f23b5
+
+[Contribute](CONTRIBUTING.md)
 
 ## What it does
 
