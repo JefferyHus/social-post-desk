@@ -220,6 +220,7 @@ export function createApp({ config, store, linkedin, ga4 = null, now = Date.now 
   function projectView(project) {
     return {
       ...project,
+      mcpEnabled: Boolean(config.mcpPort),
       connection: linkedin ? project.connection : "unconfigured",
       ga4: { status: !ga4 ? "unconfigured" : store.getGa4Connection(project.id) ? "connected" : "disconnected",
         propertyId: store.getGa4Connection(project.id)?.propertyId ?? null },
@@ -278,12 +279,12 @@ export function createApp({ config, store, linkedin, ga4 = null, now = Date.now 
     }
   }
 
-  async function ga4Report(projectId, days) {
+  async function ga4Report(projectId, days, aggregate = false) {
     if (!ga4) throw new RequestError(409, "Set up Google Analytics first.");
     const connection = store.getGa4Connection(projectId);
     if (!connection) throw new RequestError(409, "Connect a Google Analytics property first.");
     const state = ga4State(projectId);
-    const cached = state.reports.get(days);
+    const cached = aggregate ? null : state.reports.get(days);
     if (cached && cached.expires > now()) return cached.promise;
     const promise = (async () => {
       try {
@@ -301,7 +302,7 @@ export function createApp({ config, store, linkedin, ga4 = null, now = Date.now 
           await state.refresh;
         }
         assertGa4Current(projectId, state, connection.propertyId);
-        const report = await ga4.report(state.token, connection.propertyId, days);
+        const report = aggregate ? await ga4.aggregateReport(state.token, connection.propertyId, days) : await ga4.report(state.token, connection.propertyId, days);
         assertGa4Current(projectId, state, connection.propertyId);
         return report;
       } catch (error) {
@@ -309,8 +310,10 @@ export function createApp({ config, store, linkedin, ga4 = null, now = Date.now 
         throw new RequestError(502, "Google Analytics report is unavailable. Check the connection and permissions.");
       }
     })();
-    state.reports.set(days, { promise, expires: now() + minute });
-    promise.catch(() => { if (state.reports.get(days)?.promise === promise) state.reports.delete(days); });
+    if (!aggregate) {
+      state.reports.set(days, { promise, expires: now() + minute });
+      promise.catch(() => { if (state.reports.get(days)?.promise === promise) state.reports.delete(days); });
+    }
     return promise;
   }
 
@@ -451,6 +454,23 @@ export function createApp({ config, store, linkedin, ga4 = null, now = Date.now 
       const updated = store.updateProject(projectId, input);
       return send(response, 200, projectView(updated));
     }
+    if (tail === "mcp/grants" && method === "GET") {
+      if (!config.mcpPort) throw new RequestError(404, "Not found.");
+      return send(response, 200, store.listMcpGrants(projectId));
+    }
+    if (tail === "mcp/grants" && method === "POST") {
+      if (!config.mcpPort) throw new RequestError(404, "Not found.");
+      const body = await readJson(request);
+      if (![1, 7, 30].includes(body.days)) throw new RequestError(400, "Choose a 1, 7 or 30 day grant.");
+      const token = newToken(), createdAt = now();
+      const grant = store.createMcpGrant(projectId, keyOf(token), createdAt, createdAt + body.days * 86400000);
+      return send(response, 201, { ...grant, token });
+    }
+    const mcpGrant = tail?.match(new RegExp(`^mcp/grants/${uuidPath}$`));
+    if (mcpGrant && method === "DELETE") {
+      if (!config.mcpPort) throw new RequestError(404, "Not found.");
+      store.revokeMcpGrant(projectId, mcpGrant[1]); return send(response, 200, { revoked: true });
+    }
     if (tail === "ga4/connect" && method === "POST") {
       const body = await readJson(request);
       if (!ga4) throw new RequestError(409, "Set up Google Analytics first.");
@@ -582,7 +602,7 @@ export function createApp({ config, store, linkedin, ga4 = null, now = Date.now 
     throw new RequestError(404, "Not found.");
   }
 
-  return createServer(
+  const server = createServer(
     { requestTimeout: 45_000, headersTimeout: 15_000, maxHeaderSize: 8192 },
     (req, res) => {
       void handle(req, res).catch((error) => {
@@ -601,6 +621,73 @@ export function createApp({ config, store, linkedin, ga4 = null, now = Date.now 
       });
     },
   );
+
+  // Limit provider load independently of the dashboard's caches.
+  let mcpActive = 0;
+  const mcpRates = new Map();
+  function beginMcpReport(grantId) {
+    const timestamp = now();
+    for (const [id, bucket] of mcpRates) if (!bucket.active && bucket.starts.every(start => start <= timestamp - minute)) mcpRates.delete(id);
+    let bucket = mcpRates.get(grantId);
+    if (!bucket) {
+      if (mcpRates.size >= 2048) throw new RequestError(429, "Reporting is busy.");
+      bucket = { active: 0, starts: [] }; mcpRates.set(grantId, bucket);
+    }
+    bucket.starts = bucket.starts.filter(start => start > timestamp - minute);
+    if (mcpActive >= 8 || bucket.active >= 2 || bucket.starts.length >= 30) throw new RequestError(429, "Reporting is busy.");
+    bucket.active++; mcpActive++; bucket.starts.push(timestamp);
+    return () => { bucket.active--; mcpActive--; };
+  }
+  // This listener is separate from the app and never bound to a public interface.
+  server.createMcpListener = () => {
+    if (!config.mcpPort) throw new Error("MCP reporting is disabled.");
+    return createServer({ requestTimeout: 45_000, headersTimeout: 15_000, maxHeaderSize: 8192 }, (req, res) => {
+      void (async () => {
+        setSecurityHeaders(res, false);
+        const headers = Object.keys(req.headers);
+        if (req.socket.remoteAddress !== "127.0.0.1" || req.headers.host !== `127.0.0.1:${req.socket.localPort}` ||
+            headers.some(h => h === "origin" || h === "forwarded" || h.startsWith("x-forwarded-") || h === "x-real-ip" || h === "via" || h === "cookie") ||
+            req.method !== "GET" || !req.url?.startsWith("/") || req.url.startsWith("//")) throw new RequestError(403, "Request rejected.");
+        const authorization = req.headers.authorization ?? "";
+        if (!/^Bearer [A-Za-z0-9_-]{43}$/.test(authorization)) throw new RequestError(401, "Invalid or expired grant.");
+        const tokenHash = keyOf(authorization.slice(7));
+        const grant = store.findMcpGrant(tokenHash, now());
+        if (!grant) throw new RequestError(401, "Invalid or expired grant.");
+        const url = new URL(req.url, `http://127.0.0.1:${req.socket.localPort}`);
+        if (url.pathname === "/projects" && !url.search) {
+          const p = store.getProject(grant.projectId);
+          return send(res, 200, { projects: [{ id: p.id, name: p.name }] });
+        }
+        const match = url.pathname.match(new RegExp(`^/projects/${uuidPath}/(ga4|linkedin)$`));
+        if (!match || match[1] !== grant.projectId) throw new RequestError(404, "Not found.");
+        if ([...url.searchParams.keys()].some(k => k !== "days") || url.searchParams.getAll("days").length !== 1 || !["7", "28", "90"].includes(url.searchParams.get("days"))) throw new RequestError(400, "Choose 7, 28 or 90 days.");
+        const days = Number(url.searchParams.get("days")), project = store.getProject(grant.projectId);
+        let result, linkedInToken = null;
+        const finish = beginMcpReport(grant.id);
+        try {
+          if (match[2] === "ga4") result = await ga4Report(grant.projectId, days, true);
+          else { const { provider, token } = useCredentials(project.id); linkedInToken = token; result = await provider.aggregateReport(token, project.organizationId, days); }
+        } finally { finish(); }
+        // Revocation, expiry or a disconnected/replaced account suppresses in-flight results.
+        const current = store.findMcpGrant(tokenHash, now());
+        if (!current || current.id !== grant.id) throw new RequestError(401, "Invalid or expired grant.");
+        if (linkedInToken !== null) {
+          const credentials = store.getCredentials(project.id), latest = store.getProject(project.id);
+          if (!credentials || credentials.accessToken !== linkedInToken || Date.parse(credentials.expiresAt) <= now() || latest.organizationId !== project.organizationId) throw new RequestError(409, "LinkedIn connection changed.");
+        }
+        const safeNumber = value => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER ? value : null;
+        const keys = match[2] === "ga4" ? ["activeUsers", "sessions", "screenPageViews", "keyEvents"] : ["impressions", "clicks", "reactions", "comments", "shares"];
+        const totals = Object.fromEntries(keys.map(k => [k, safeNumber(result.totals?.[k])]));
+        const allowedWarnings = new Set(["Totals: results may be subject to data thresholds.", "Totals: results are sampled.", "Totals: some data may be grouped into an other row.", "Totals: Google reports data truncation.", "Totals: some metrics are restricted.", "Totals: Google returned an empty report.", "Totals: report rows were limited.", "Totals: no data was returned.", "Property timezone or exact dates are unavailable.", "No aggregate statistics were returned.", "Aggregate statistics could not be retrieved."]);
+        const warnings = (Array.isArray(result.warnings) ? result.warnings : []).filter(w => allowedWarnings.has(w));
+        if (match[2] === "ga4") return send(res, 200, { days, timezone: typeof result.timezone === "string" && /^[A-Za-z0-9_+\/-]{1,100}$/.test(result.timezone) ? result.timezone : null,
+          startDate: /^\d{4}-\d{2}-\d{2}$/.test(result.startDate ?? "") ? result.startDate : null, endDate: /^\d{4}-\d{2}-\d{2}$/.test(result.endDate ?? "") ? result.endDate : null, totals, warnings });
+        return send(res, 200, { days, from: /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(result.from ?? "") ? result.from : null,
+          to: /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(result.to ?? "") ? result.to : null, totals, warnings });
+      })().catch(error => { if (!res.headersSent) send(res, error instanceof RequestError ? error.status : 502, { error: error instanceof RequestError && error.status < 500 ? error.message : "Aggregate report is unavailable." }); else res.end(); });
+    });
+  };
+  return server;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -610,17 +697,22 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const linkedin = config.linkedin ? createLinkedIn(config.linkedin) : null;
     const ga4 = config.ga4 ? (await import("./ga4.js")).createGa4(config.ga4) : null;
     const server = createApp({ config, store, linkedin, ga4 });
-    server.on("error", () => {
-      console.error("The server could not listen on the configured address.");
-      store.close();
-      process.exitCode = 1;
+    const mcpListener = config.mcpPort ? server.createMcpListener() : null;
+    let stopping = false;
+    const stop = () => {
+      if (stopping) return;
+      stopping = true;
+      const listeners = [server, mcpListener].filter(Boolean);
+      let remaining = listeners.length;
+      for (const listener of listeners) listener.close(() => { if (--remaining === 0) store.close(); });
+    };
+    for (const listener of [server, mcpListener].filter(Boolean)) listener.on("error", () => {
+      console.error("A server could not listen on its configured address.");
+      process.exitCode = 1; stop();
     });
-    server.listen(config.port, config.host, () =>
-      console.log(`Social Post Desk listening at ${config.origin.origin}`),
-    );
-    for (const signal of ["SIGTERM", "SIGINT"]) {
-      process.once(signal, () => server.close(() => store.close()));
-    }
+    server.listen(config.port, config.host, () => console.log(`Social Post Desk listening at ${config.origin.origin}`));
+    if (mcpListener) mcpListener.listen(config.mcpPort, "127.0.0.1", () => console.log("Local MCP reporting listener enabled."));
+    for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, stop);
   } catch (error) {
     console.error(error instanceof Error ? error.message : "Could not start Social Post Desk.");
     process.exitCode = 1;

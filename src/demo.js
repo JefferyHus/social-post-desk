@@ -10,6 +10,7 @@ const config = {
     SOCIAL_DESK_PASSWORD: password,
     SOCIAL_DESK_ENCRYPTION_KEY: randomBytes(32).toString("hex"),
     APP_ORIGIN: "http://127.0.0.1:3010",
+    MCP_REPORT_PORT: process.env.SOCIAL_DESK_DEMO_MCP_REPORT_PORT || "",
   }),
   demo: true,
 };
@@ -63,6 +64,10 @@ const provider = {
   authorizeUrl: demoUnavailable,
   exchangeCode: demoUnavailable,
   verifyOrganization: demoUnavailable,
+  async aggregateReport(token, organizationId, days) {
+    const { from, to, totals, warnings } = await provider.report(token, organizationId, days);
+    return { from, to, totals, warnings };
+  },
   async listPosts(_token, organizationId) {
     return posts.get(organizationId) ?? [];
   },
@@ -122,6 +127,10 @@ const ga4 = {
     if (refreshToken !== demoGoogleTokens.refreshToken) demoUnavailable();
     return { accessToken: demoGoogleTokens.accessToken, expiresAt: demoGoogleExpiry() };
   },
+  async aggregateReport(token, propertyId, days) {
+    const report = await ga4.report(token, propertyId, days);
+    return { days, timezone: "UTC", startDate: report.daily[0].date, endDate: report.daily.at(-1).date, totals: report.totals, warnings: [] };
+  },
   async report(_accessToken, propertyId, days) {
     if (propertyId !== demoPropertyId) demoUnavailable();
     const date = new Date();
@@ -161,6 +170,7 @@ const ga4 = {
 };
 
 const server = createApp({ config, store, linkedin: provider, ga4 });
+if (config.mcpPort) server.createMcpListener().listen(config.mcpPort, "127.0.0.1");
 server.listen(config.port, config.host, () => {
   console.log(`Synthetic demo: ${config.origin.origin} · password: ${password}`);
 });

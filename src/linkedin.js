@@ -271,6 +271,23 @@ export function createLinkedIn({
       .sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""))
       .slice(0, 20);
   }
+  async function aggregateReport(token, organizationId, days) {
+    const org = organization(organizationId);
+    if (![7, 28, 90].includes(days)) throw new LinkedInError("Invalid report period", { status: 400 });
+    const end = new Date(), start = new Date(end.getTime() - days * 86400000);
+    const params = new URLSearchParams({ q: "organizationalEntity", organizationalEntity: org.urn });
+    const interval = `timeIntervals=(timeRange:(start:${start.getTime()},end:${end.getTime()}),timeGranularityType:DAY)`;
+    let totals = null; const warnings = [];
+    try {
+      const data = await json(await request(`/rest/organizationalEntityShareStatistics?${params}&${interval}`, { token }));
+      if (!Array.isArray(data.elements)) throw new Error();
+      const rows = data.elements.map(x => stat(x.totalShareStatistics));
+      if (!rows.every(Boolean)) throw new Error();
+      if (rows.length) totals = rows.reduce((a, b) => Object.fromEntries(Object.keys(a).map(k => [k, a[k] + b[k]])));
+      else warnings.push("No aggregate statistics were returned.");
+    } catch { warnings.push("Aggregate statistics could not be retrieved."); }
+    return { from: start.toISOString(), to: end.toISOString(), totals, warnings };
+  }
   async function report(token, organizationId, days) {
     const org = organization(organizationId);
     if (!Number.isInteger(days) || days < 1 || days > 365)
@@ -341,5 +358,5 @@ export function createLinkedIn({
     }
     return { from, to, totals, posts: enriched, warnings };
   }
-  return { authorizeUrl, exchangeCode, verifyOrganization, publish, listPosts, report };
+  return { authorizeUrl, exchangeCode, verifyOrganization, publish, listPosts, report, aggregateReport };
 }

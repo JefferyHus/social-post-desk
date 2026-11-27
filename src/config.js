@@ -34,6 +34,12 @@ export function loadConfig(env = process.env) {
   const port = Number(env.PORT || (origin.protocol === "http:" ? origin.port || "80" : "3000"));
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid PORT.");
 
+  let mcpPort = null;
+  if (env.MCP_REPORT_PORT) {
+    if (!/^[1-9]\d{0,4}$/.test(env.MCP_REPORT_PORT)) throw new Error("MCP_REPORT_PORT must be a valid numeric port.");
+    mcpPort = Number(env.MCP_REPORT_PORT);
+    if (mcpPort > 65535 || mcpPort === port) throw new Error("MCP_REPORT_PORT must be a different valid port.");
+  }
   const clientId = env.LINKEDIN_CLIENT_ID?.trim();
   const clientSecret = env.LINKEDIN_CLIENT_SECRET?.trim();
   if (Boolean(clientId) !== Boolean(clientSecret))
@@ -52,6 +58,7 @@ export function loadConfig(env = process.env) {
     origin,
     host,
     port,
+    mcpPort,
     secureCookie: origin.protocol === "https:",
     filename: resolve(env.DATA_DIR || "data", "social-post-desk.sqlite"),
     linkedin: clientId && clientSecret ? { clientId, clientSecret, version, redirectUri } : null,

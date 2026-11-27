@@ -366,3 +366,12 @@ test("request timeout aborts and returns a sanitized 504", async (t) => {
 	);
 	assert.equal(signal.aborted, true);
 });
+
+test("aggregate-only report requests just totals and retains unknown and warnings", async () => {
+  const { provider, calls } = setup(() => reply({ metricHeaders: header("activeUsers", "sessions", "screenPageViews", "keyEvents"), rows: [row([], ["4", "0", "7", "bad"])], metadata: { timeZone: "Africa/Casablanca", subjectToThresholding: true }, rowCount: 1 }));
+  const report = await provider.aggregateReport("synthetic", "123", 7);
+  assert.equal(calls.length, 1); assert.match(calls[0].url, /:runReport$/);
+  const body = JSON.parse(calls[0].init.body); assert.equal(body.dimensions, undefined); assert.equal(body.metrics.length, 4);
+  assert.equal(report.totals.sessions, 0); assert.equal(report.totals.keyEvents, null); assert.equal(report.startDate, "2026-11-21"); assert.equal(report.endDate, "2026-11-27"); assert.match(report.warnings.join(" "), /threshold/);
+  await assert.rejects(provider.aggregateReport("synthetic", "123", 14), GA4Error); assert.equal(calls.length, 1);
+});

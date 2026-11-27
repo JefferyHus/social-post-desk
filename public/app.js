@@ -463,8 +463,40 @@ function openProject(editing) {
   $("#project-dialog-title").textContent = editing ? "Project settings" : "New project";
   $("#project-name").value = editing ? state.project.name : "";
   $("#organization-id").value = editing ? state.project.organizationId || "" : "";
+  $("#mcp-secret").value = ""; $("#mcp-secret-container").hidden = true;
+  $("#mcp-grants").hidden = !editing || !state.project?.mcpEnabled;
   $("#project-dialog").showModal();
+  if (!$("#mcp-grants").hidden) void loadMcpGrants();
 }
+let mcpGrantsRequest = 0;
+async function loadMcpGrants() {
+  const id = state.project?.id, request = ++mcpGrantsRequest;
+  if (!id) return;
+  try {
+    const grants = await api(`/api/projects/${encodeURIComponent(id)}/mcp/grants`);
+    if (state.project?.id !== id || request !== mcpGrantsRequest || !$("#project-dialog").open) return;
+    const list = $("#mcp-grant-list"); list.replaceChildren();
+    if (!grants.length) list.append(el("p", "small-text", "No reporting grants."));
+    for (const grant of grants) {
+      const row = el("div", "mcp-grant-row");
+      row.append(el("span", "small-text", `Expires ${new Date(grant.expiresAt).toLocaleString()}`));
+      const revoke = el("button", "button outline small", "Revoke"); revoke.type = "button";
+      setButton(revoke, async () => {
+        await api(`/api/projects/${encodeURIComponent(id)}/mcp/grants/${encodeURIComponent(grant.id)}`, { method: "DELETE" });
+        if (state.project?.id === id) { await loadMcpGrants(); message("Reporting grant revoked."); }
+      });
+      row.append(revoke); list.append(row);
+    }
+  } catch (error) { if (state.project?.id === id && request === mcpGrantsRequest) showError(error); }
+}
+setButton($("#mcp-create"), async () => {
+  const id = state.project?.id; if (!id) return;
+  const grant = await api(`/api/projects/${encodeURIComponent(id)}/mcp/grants`, send("POST", { days: Number($("#mcp-days").value) }));
+  if (state.project?.id !== id || !$("#project-dialog").open) return;
+  $("#mcp-secret").value = grant.token; $("#mcp-secret-container").hidden = false;
+  await loadMcpGrants();
+});
+$("#project-dialog").addEventListener("close", () => { mcpGrantsRequest++; $("#mcp-secret").value = ""; $("#mcp-secret-container").hidden = true; });
 $("#new-project").addEventListener("click", () => openProject(false));
 $("#empty-add").addEventListener("click", () => openProject(false));
 $("#settings-open").addEventListener("click", () => openProject(true));
