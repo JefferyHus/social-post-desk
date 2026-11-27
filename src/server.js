@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { loadConfig } from "./config.js";
 import { createLinkedIn, LinkedInError } from "./linkedin.js";
 import { openStore, StoreError } from "./store.js";
+import { validateSpec, ReportValidationError } from "./ga4-builder.js";
 
 class RequestError extends Error {
   constructor(status, message) {
@@ -25,6 +26,7 @@ const assets = new Map([
   ["/styles.css", ["styles.css", "text/css; charset=utf-8"]],
   ["/app.js", ["app.js", "text/javascript; charset=utf-8"]],
   ["/report-csv.js", ["report-csv.js", "text/javascript; charset=utf-8"]],
+  ["/ga4-builder-state.js", ["ga4-builder-state.js", "text/javascript; charset=utf-8"]],
   ["/brand-mark.png", ["brand-mark.png", "image/png"]],
 ]);
 
@@ -278,12 +280,12 @@ export function createApp({ config, store, linkedin, ga4 = null, now = Date.now 
     }
   }
 
-  async function ga4Report(projectId, days) {
+  async function ga4Report(projectId, days, customSpec = null) {
     if (!ga4) throw new RequestError(409, "Set up Google Analytics first.");
     const connection = store.getGa4Connection(projectId);
     if (!connection) throw new RequestError(409, "Connect a Google Analytics property first.");
     const state = ga4State(projectId);
-    const cached = state.reports.get(days);
+    const cached = customSpec ? null : state.reports.get(days);
     if (cached && cached.expires > now()) return cached.promise;
     const promise = (async () => {
       try {
@@ -301,16 +303,19 @@ export function createApp({ config, store, linkedin, ga4 = null, now = Date.now 
           await state.refresh;
         }
         assertGa4Current(projectId, state, connection.propertyId);
-        const report = await ga4.report(state.token, connection.propertyId, days);
+        const report = customSpec ? await ga4.customReport(state.token, connection.propertyId, customSpec) : await ga4.report(state.token, connection.propertyId, days);
         assertGa4Current(projectId, state, connection.propertyId);
         return report;
       } catch (error) {
         if (error instanceof RequestError) throw error;
+        if (error instanceof ReportValidationError) throw new RequestError(400, error.message);
         throw new RequestError(502, "Google Analytics report is unavailable. Check the connection and permissions.");
       }
     })();
-    state.reports.set(days, { promise, expires: now() + minute });
-    promise.catch(() => { if (state.reports.get(days)?.promise === promise) state.reports.delete(days); });
+    if (!customSpec) {
+      state.reports.set(days, { promise, expires: now() + minute });
+      promise.catch(() => { if (state.reports.get(days)?.promise === promise) state.reports.delete(days); });
+    }
     return promise;
   }
 
@@ -468,6 +473,25 @@ export function createApp({ config, store, linkedin, ga4 = null, now = Date.now 
       invalidateGa4(projectId);
       if (session.ga4oauth?.projectId === projectId) session.ga4oauth = null;
       return send(response, 200, projectView(store.getProject(projectId)));
+    }
+    if (tail === "ga4/templates" && method === "GET") return send(response, 200, store.listGa4Templates(projectId));
+    if (tail === "ga4/templates" && method === "POST") {
+      const body = await readJson(request);
+      if (typeof body.name !== "string" || !body.name.trim() || body.name.trim().length > 80) throw new RequestError(400, "Enter a report name of up to 80 characters.");
+      let spec; try { spec = validateSpec(body.spec); } catch (error) { if (error instanceof ReportValidationError) throw new RequestError(400, error.message); throw error; }
+      return send(response, 201, store.createGa4Template(projectId, body.name.trim(), spec));
+    }
+    const templateMatch = tail?.match(new RegExp(`^ga4/templates/${uuidPath}$`));
+    if (templateMatch && method === "PATCH") {
+      const body = await readJson(request);
+      if (typeof body.name !== "string" || !body.name.trim() || body.name.trim().length > 80) throw new RequestError(400, "Enter a report name of up to 80 characters.");
+      return send(response, 200, store.renameGa4Template(projectId, templateMatch[1], body.name.trim()));
+    }
+    if (templateMatch && method === "DELETE") { store.deleteGa4Template(projectId, templateMatch[1]); return send(response, 200, { deleted: true }); }
+    if (tail === "ga4/custom-report" && method === "POST") {
+      const body = await readJson(request);
+      let spec; try { spec = validateSpec(body.spec); } catch (error) { if (error instanceof ReportValidationError) throw new RequestError(400, error.message); throw error; }
+      return send(response, 200, await ga4Report(projectId, null, spec));
     }
     if (tail === "ga4/report" && method === "GET") {
       const days = Number(url.searchParams.get("days") ?? "28");

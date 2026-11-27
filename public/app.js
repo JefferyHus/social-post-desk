@@ -1,4 +1,5 @@
-import { reportCsv, reportFilename, ga4ReportCsv, ga4ReportFilename } from "/report-csv.js";
+import { createPreviewGuard } from "/ga4-builder-state.js";
+import { reportCsv, reportFilename, ga4ReportCsv, ga4ReportFilename, ga4BuilderCsv } from "/report-csv.js";
 
 const $ = (selector) => document.querySelector(selector);
 const state = {
@@ -349,6 +350,7 @@ async function loadReport() {
 async function chooseProject(id) {
   const token = ++state.request;
   state.ga4Request++;
+  resetBuilder();
   state.reportRequest++;
   state.ga4Report = null;
   state.ga4Error = null;
@@ -364,6 +366,7 @@ async function chooseProject(id) {
   editDraft(null, { scroll: false });
   if (!state.project) return;
   const projectId = state.project.id;
+  void loadBuilderTemplates();
   if (!$("#analytics-view").hidden) void loadGa4Report();
   try {
     const drafts = await api(endpoint("/drafts"));
@@ -437,6 +440,7 @@ async function logout() {
   state.request++;
   state.reportRequest++;
   state.ga4Request++;
+  resetBuilder();
   state.ga4Report = null;
   state.ga4Error = null;
   state.ga4Loading = false;
@@ -652,6 +656,7 @@ function renderGa4() {
   $("#ga-connect-form").hidden = connected || connection?.status === "unconfigured";
   $("#ga-disconnect").hidden = !connected;
   $("#ga-report-content").hidden = !connected;
+  $("#ga-builder").hidden = !connected;
   if (state.ga4FormProject !== project?.id) {
     $("#ga-property-id").value = connection?.propertyId || "";
     state.ga4FormProject = project?.id || null;
@@ -735,6 +740,81 @@ $("#ga-export").addEventListener("click", () => {
     const link = document.createElement("a"); link.href = url; link.download = ga4ReportFilename(state.project.name, state.ga4Report.days);
     document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch (error) { showError(error); }
+});
+
+// Builder state is invalidated whenever the project or selected fields change.
+const builder = { guard: createPreviewGuard(), templatesRequest: 0, templates: [], report: null };
+const builderLabels = { activeUsers: "Active users", sessions: "Sessions", screenPageViews: "Views", keyEvents: "Key events" };
+const builderAllowed = { none: Object.keys(builderLabels), channel: ["sessions", "keyEvents"], sourceMedium: ["sessions", "keyEvents"], campaign: ["sessions", "keyEvents"], page: ["screenPageViews"] };
+function resetBuilder() {
+  builder.guard.invalidate(); builder.templatesRequest++; builder.templates = []; builder.report = null;
+  $("#builder-export").disabled = true; $("#builder-status").replaceChildren(); $("#builder-result").replaceChildren();
+  $("#builder-saved").replaceChildren(new Option("Choose a saved report", ""));
+}
+function invalidateBuilder() { builder.guard.invalidate(); builder.report = null; $("#builder-export").disabled = true; $("#builder-status").replaceChildren(); $("#builder-result").replaceChildren(); }
+function builderCompatibility() {
+  const allowed = builderAllowed[$("#builder-breakdown").value];
+  for (const field of document.querySelectorAll('[name="builder-metric"]')) { field.disabled = !allowed.includes(field.value); if (field.disabled) field.checked = false; }
+  if (!document.querySelector('[name="builder-metric"]:checked')) document.querySelector(`[name="builder-metric"][value="${allowed[0]}"]`).checked = true;
+  $("#builder-dates").hidden = $("#builder-period").value !== "custom";
+}
+function builderSpec() {
+  const period = $("#builder-period").value;
+  return { breakdown: $("#builder-breakdown").value, metrics: [...document.querySelectorAll('[name="builder-metric"]:checked')].map(x => x.value), dateRule: period === "custom" ? { kind: "custom", startDate: $("#builder-start").value, endDate: $("#builder-end").value } : { kind: "preset", days: Number(period) } };
+}
+async function loadBuilderTemplates(selected = "") {
+  const id = state.project?.id, request = ++builder.templatesRequest;
+  if (!id) return;
+  try {
+    const templates = await api(`/api/projects/${encodeURIComponent(id)}/ga4/templates`);
+    if (state.project?.id !== id || request !== builder.templatesRequest) return;
+    builder.templates = templates; $("#builder-saved").replaceChildren(new Option("Choose a saved report", ""));
+    for (const template of templates) $("#builder-saved").append(new Option(template.name, template.id));
+    $("#builder-saved").value = selected;
+  } catch (error) { if (state.project?.id === id && request === builder.templatesRequest) showError(error); }
+}
+$("#builder-form").addEventListener("change", () => { builderCompatibility(); invalidateBuilder(); });
+$("#builder-form").addEventListener("submit", async event => {
+  event.preventDefault(); const id = state.project?.id, request = builder.guard.begin(id);
+  if (!id) return;
+  builder.report = null; $("#builder-export").disabled = true; $("#builder-result").replaceChildren(); $("#builder-status").textContent = "Loading report…";
+  try {
+    const report = await api(`/api/projects/${encodeURIComponent(id)}/ga4/custom-report`, send("POST", { spec: builderSpec() }));
+    if (!builder.guard.current(request, state.project?.id)) return;
+    builder.report = report; $("#builder-export").disabled = false;
+    const status = $("#builder-status"); status.replaceChildren(el("p", "section-note", `${report.startDate} to ${report.endDate} · ${report.timezone}`));
+    for (const warning of report.warnings) status.append(el("p", "warning", warning));
+    renderTable($("#builder-result"), ["Breakdown", ...report.metrics.map(m => builderLabels[m])], report.rows.map(row => [row.dimension ?? (report.breakdown === "none" ? "Total" : "Unavailable"), ...report.metrics.map(m => metricText(row.metrics[m]))]));
+    if (!report.rows.length) $("#builder-result").append(el("p", "empty-state", "No data returned."));
+  } catch (error) { if (builder.guard.current(request, state.project?.id)) $("#builder-status").textContent = `Report unavailable: ${error.message}`; }
+});
+$("#builder-export").addEventListener("click", () => {
+  if (!state.project || !builder.report) return;
+  const url = URL.createObjectURL(new Blob([ga4BuilderCsv(state.project, builder.report)], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a"); link.href = url; link.download = "ga4-custom-report.csv"; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+setButton($("#builder-save"), async () => {
+  const id = state.project?.id; if (!id) return;
+  const template = await api(`/api/projects/${encodeURIComponent(id)}/ga4/templates`, send("POST", { name: $("#builder-name").value, spec: builderSpec() }));
+  if (state.project?.id === id) { await loadBuilderTemplates(template.id); message("Report template saved."); }
+});
+$("#builder-load").addEventListener("click", () => {
+  const template = builder.templates.find(t => t.id === $("#builder-saved").value); if (!template) return;
+  const { spec } = template; $("#builder-name").value = template.name; $("#builder-breakdown").value = spec.breakdown;
+  $("#builder-period").value = spec.dateRule.kind === "preset" ? String(spec.dateRule.days) : "custom";
+  $("#builder-start").value = spec.dateRule.startDate || ""; $("#builder-end").value = spec.dateRule.endDate || "";
+  for (const field of document.querySelectorAll('[name="builder-metric"]')) field.checked = spec.metrics.includes(field.value);
+  builderCompatibility(); invalidateBuilder();
+});
+setButton($("#builder-rename"), async () => {
+  const id = state.project?.id, template = $("#builder-saved").value; if (!id || !template) return;
+  await api(`/api/projects/${encodeURIComponent(id)}/ga4/templates/${encodeURIComponent(template)}`, send("PATCH", { name: $("#builder-name").value }));
+  if (state.project?.id === id) { await loadBuilderTemplates(template); message("Report template renamed."); }
+});
+setButton($("#builder-delete"), async () => {
+  const id = state.project?.id, template = $("#builder-saved").value; if (!id || !template || !window.confirm("Delete this saved report template?")) return;
+  await api(`/api/projects/${encodeURIComponent(id)}/ga4/templates/${encodeURIComponent(template)}`, { method: "DELETE" });
+  if (state.project?.id === id) { await loadBuilderTemplates(); message("Report template deleted."); }
 });
 
 start().catch(showError);
