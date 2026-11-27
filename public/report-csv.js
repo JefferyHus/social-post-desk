@@ -66,3 +66,18 @@ export function ga4ReportFilename(name, days) {
   const safeName = reportFilename(name, {}).replace(/^social-report-/, "").replace(/-report\.csv$/, "");
   return `ga4-report-${safeName}-${[7, 28, 90].includes(days) ? days : "unknown"}-days.csv`;
 }
+
+/** Search Console rows are limited by Google and exported without inventing zeros. */
+export function gscReportCsv(project, report) {
+  if (!project || !report) throw new Error("A loaded report and project are required.");
+  const rows = [["project","site","start_date_pacific","end_date_pacific","scope","dimension","clicks","impressions","ctr","position","warnings"]];
+  const add = (scope, dimension, m) => rows.push([project.name,project.gsc?.siteUrl,report.startDate,report.endDate,scope,dimension,m?.clicks,m?.impressions,m?.ctr,m?.position,scope === "totals" ? (report.warnings || []).join("\n") : ""]);
+  add("totals",null,report.totals);
+  for (const d of report.daily || []) add("daily",d.date,d);
+  for (const q of report.queries || []) add("query",q.query,q);
+  for (const p of report.pages || []) add("page",p.page,p);
+  return `\uFEFF${rows.map(row => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
+}
+export function gscReportFilename(name, days) {
+  return `search-${reportFilename(name, {}).replace(/^social-report-/, "").replace(/-report\.csv$/, "")}-${[7,28,90].includes(days) ? days : "unknown"}-days.csv`;
+}

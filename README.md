@@ -65,6 +65,12 @@ An unconfirmed publish is held for review. **Check status** looks for exactly on
 
 Each project has one Google Analytics connection. Disconnecting removes its saved grant from this instance. To revoke Google's grant as well, use your Google Account's third-party connections settings. That can affect other projects connected to the same OAuth app and Google account.
 
+## Google Search Console
+
+Configure the same Google OAuth client credentials used for GA4 and register `<APP_ORIGIN>/oauth/google/search-console/callback` as a second redirect. Search Console asks for its own `webmasters.readonly` consent. In Website analytics, connect Google and select an authorized Domain or URL-prefix property. Disconnect removes its locally stored refresh token independently of GA4; use Google's account controls to revoke the authorization at Google.
+
+The report shows finalized web search data for the displayed Pacific Time dates. Totals come from Google's aggregate response; daily, query and page tables may be incomplete and query/page rows are limited to 100. Empty or unavailable values are not interpreted as zero. CSV export uses the currently displayed report. The demo uses fictional properties and data.
+
 ## Data handling
 
 - The application has no tracking scripts or hosted dependencies.

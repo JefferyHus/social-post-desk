@@ -155,11 +155,13 @@ function providerMessage(error) {
   }
 }
 
-export function createApp({ config, store, linkedin, ga4 = null, now = Date.now }) {
+export function createApp({ config, store, linkedin, ga4 = null, gsc = null, now = Date.now }) {
   const sessions = new Map();
   const connectionRequests = new Map();
   const ga4Requests = new Map();
   const ga4States = new Map();
+  const gscRequests = new Map();
+  const gscStates = new Map();
   const loginAttempts = new Map();
   const reports = new Map();
   const password = hash(config.password);
@@ -221,6 +223,7 @@ export function createApp({ config, store, linkedin, ga4 = null, now = Date.now 
     return {
       ...project,
       connection: linkedin ? project.connection : "unconfigured",
+      gsc: { status: !gsc ? "unconfigured" : store.getGscConnection(project.id) ? "connected" : "disconnected", siteUrl: store.getGscConnection(project.id)?.siteUrl ?? null },
       ga4: { status: !ga4 ? "unconfigured" : store.getGa4Connection(project.id) ? "connected" : "disconnected",
         propertyId: store.getGa4Connection(project.id)?.propertyId ?? null },
     };
@@ -314,6 +317,115 @@ export function createApp({ config, store, linkedin, ga4 = null, now = Date.now 
     return promise;
   }
 
+  function invalidateGsc(projectId) {
+    gscStates.delete(projectId);
+    gscRequests.delete(projectId);
+  }
+
+  function gscState(projectId) {
+    let state = gscStates.get(projectId);
+    if (!state) {
+      if (gscStates.size >= 128)
+        gscStates.delete(gscStates.keys().next().value);
+      state = {
+        token: null,
+        tokenExpires: 0,
+        refresh: null,
+        reports: new Map(),
+      };
+      gscStates.set(projectId, state);
+    }
+    return state;
+  }
+
+  function assertGscCurrent(projectId, state, siteUrl) {
+    if (
+      gscStates.get(projectId) !== state ||
+      store.getGscConnection(projectId)?.siteUrl !== siteUrl
+    ) {
+      throw new RequestError(
+        409,
+        "Search Console connection changed. Try again.",
+      );
+    }
+  }
+
+  async function gscToken(projectId) {
+    if (!gsc) throw new RequestError(409, "Set up Search Console first.");
+    const connection = store.getGscConnection(projectId);
+    if (!connection)
+      throw new RequestError(409, "Connect a Search Console property first.");
+    const state = gscState(projectId);
+    if (!state.token || state.tokenExpires <= now() + 30_000) {
+      if (!state.refresh) {
+        const refreshToken = store.getGscRefreshToken(projectId);
+        if (!refreshToken)
+          throw new RequestError(
+            409,
+            "Connect a Search Console property first.",
+          );
+        state.refresh = gsc
+          .refresh(refreshToken)
+          .then((token) => {
+            assertGscCurrent(projectId, state, connection.siteUrl);
+            if (
+              typeof token.accessToken !== "string" ||
+              !token.accessToken ||
+              !Number.isFinite(Date.parse(token.expiresAt)) ||
+              Date.parse(token.expiresAt) <= now()
+            )
+              throw new Error("Invalid Google credentials");
+            state.token = token.accessToken;
+            state.tokenExpires = Date.parse(token.expiresAt);
+          })
+          .finally(() => {
+            state.refresh = null;
+          });
+      }
+      await state.refresh;
+    }
+    assertGscCurrent(projectId, state, connection.siteUrl);
+    return { state, siteUrl: connection.siteUrl, accessToken: state.token };
+  }
+
+  async function gscReport(projectId, days) {
+    if (!gsc) throw new RequestError(409, "Set up Search Console first.");
+    if (!store.getGscConnection(projectId))
+      throw new RequestError(409, "Connect a Search Console property first.");
+    const state = gscState(projectId),
+      cached = state.reports.get(days);
+    if (cached && cached.expires > now()) return cached.promise;
+    const promise = (async () => {
+      try {
+        const credentials = await gscToken(projectId);
+        if (credentials.state !== state)
+          throw new RequestError(
+            409,
+            "Search Console connection changed. Try again.",
+          );
+        const report = await gsc.report(
+          credentials.accessToken,
+          credentials.siteUrl,
+          days,
+        );
+        assertGscCurrent(projectId, state, credentials.siteUrl);
+        return report;
+      } catch (error) {
+        if (error instanceof RequestError) throw error;
+        throw new RequestError(
+          502,
+          "Search Console report is unavailable. Check the connection and permissions.",
+        );
+      }
+    })();
+    state.reports.set(days, { promise, expires: now() + minute });
+    promise.catch(() => {
+      if (state.reports.get(days)?.promise === promise)
+        state.reports.delete(days);
+    });
+    return promise;
+  }
+
   async function googleCallback(url, response, auth) {
     const { key, session } = auth;
     const pending = session.ga4oauth;
@@ -335,6 +447,57 @@ export function createApp({ config, store, linkedin, ga4 = null, now = Date.now 
       return redirect(response, `${target}connected`);
     } catch { return redirect(response, `${target}error`); }
     finally { if (ga4Requests.get(pending.projectId) === pending) ga4Requests.delete(pending.projectId); }
+  }
+
+  async function searchConsoleCallback(url, response, auth) {
+    const { key, session } = auth,
+      pending = session.gscoauth,
+      state = url.searchParams.get("state");
+    if (
+      !pending ||
+      pending.expires <= now() ||
+      typeof state !== "string" ||
+      pending.stateKey !== keyOf(state) ||
+      gscRequests.get(pending.projectId) !== pending
+    )
+      throw new RequestError(
+        400,
+        "This Search Console connection request expired. Start again.",
+      );
+    session.gscoauth = null;
+    const target = `/?project=${pending.projectId}&gsc=`;
+    try {
+      const code = url.searchParams.get("code");
+      if (!gsc || url.searchParams.has("error") || !code || code.length > 2048)
+        throw new Error();
+      const creds = await gsc.exchangeCode({
+        code,
+        verifier: pending.verifier,
+      });
+      if (
+        !creds?.accessToken ||
+        !creds.refreshToken ||
+        !Number.isFinite(Date.parse(creds.expiresAt)) ||
+        Date.parse(creds.expiresAt) <= now()
+      )
+        throw new Error();
+      const sites = await gsc.listSites(creds.accessToken);
+      if (
+        sessions.get(key) !== session ||
+        session.expires <= now() ||
+        pending.expires <= now() ||
+        gscRequests.get(pending.projectId) !== pending
+      )
+        throw new Error();
+      pending.refreshToken = creds.refreshToken;
+      pending.sites = sites;
+      session.gscselection = pending;
+      return redirect(response, `${target}select`);
+    } catch {
+      if (gscRequests.get(pending.projectId) === pending)
+        gscRequests.delete(pending.projectId);
+      return redirect(response, `${target}error`);
+    }
   }
 
   async function oauthCallback(url, response, auth) {
@@ -451,6 +614,81 @@ export function createApp({ config, store, linkedin, ga4 = null, now = Date.now 
       const updated = store.updateProject(projectId, input);
       return send(response, 200, projectView(updated));
     }
+    if (tail === "gsc/connect" && method === "POST") {
+      await readJson(request);
+      if (!gsc) throw new RequestError(409, "Set up Search Console first.");
+      for (const [id, pending] of gscRequests)
+        if (pending.expires <= now()) gscRequests.delete(id);
+      if (gscRequests.size >= 128 && !gscRequests.has(projectId))
+        throw new RequestError(429, "Too many connection requests.");
+      const state = newToken(),
+        verifier = newToken();
+      const pending = {
+        projectId,
+        stateKey: keyOf(state),
+        verifier,
+        expires: now() + oauthLifetime,
+      };
+      session.gscoauth = pending;
+      session.gscselection = null;
+      gscRequests.set(projectId, pending);
+      return send(response, 200, {
+        authorizeUrl: gsc.authorizeUrl({
+          state,
+          challenge: hash(verifier).toString("base64url"),
+        }),
+      });
+    }
+    if (tail === "gsc/sites" && method === "GET") {
+      const pending = session.gscselection;
+      if (
+        !pending ||
+        pending.projectId !== projectId ||
+        pending.expires <= now() ||
+        gscRequests.get(projectId) !== pending
+      )
+        throw new RequestError(
+          409,
+          "Connect Search Console again to select a property.",
+        );
+      return send(response, 200, { sites: pending.sites });
+    }
+    if (tail === "gsc/select" && method === "POST") {
+      const body = await readJson(request),
+        pending = session.gscselection;
+      if (
+        !pending ||
+        pending.projectId !== projectId ||
+        pending.expires <= now() ||
+        gscRequests.get(projectId) !== pending ||
+        !pending.sites.some((site) => site.siteUrl === body.siteUrl)
+      )
+        throw new RequestError(
+          409,
+          "Select an authorized Search Console property.",
+        );
+      store.setGscConnection(projectId, {
+        siteUrl: body.siteUrl,
+        refreshToken: pending.refreshToken,
+      });
+      session.gscselection = null;
+      invalidateGsc(projectId);
+      return send(response, 200, projectView(store.getProject(projectId)));
+    }
+    if (tail === "gsc/connection" && method === "DELETE") {
+      store.disconnectGsc(projectId);
+      invalidateGsc(projectId);
+      if (session.gscoauth?.projectId === projectId) session.gscoauth = null;
+      if (session.gscselection?.projectId === projectId)
+        session.gscselection = null;
+      return send(response, 200, projectView(store.getProject(projectId)));
+    }
+    if (tail === "gsc/report" && method === "GET") {
+      const days = Number(url.searchParams.get("days") ?? "28");
+      if (![7, 28, 90].includes(days))
+        throw new RequestError(400, "Choose 7, 28 or 90 days.");
+      return send(response, 200, await gscReport(projectId, days));
+    }
     if (tail === "ga4/connect" && method === "POST") {
       const body = await readJson(request);
       if (!ga4) throw new RequestError(409, "Set up Google Analytics first.");
@@ -563,6 +801,7 @@ export function createApp({ config, store, linkedin, ga4 = null, now = Date.now 
     }
     if (url.pathname === "/api/login" && method === "POST") return login(request, response);
     if (!auth) throw new RequestError(401, "Sign in to continue.");
+    if (url.pathname === "/oauth/google/search-console/callback" && method === "GET") return searchConsoleCallback(url, response, auth);
     if (url.pathname === "/oauth/google/callback" && method === "GET") return googleCallback(url, response, auth);
     if (url.pathname === "/oauth/linkedin/callback" && method === "GET")
       return oauthCallback(url, response, auth);
@@ -609,7 +848,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const store = openStore({ filename: config.filename, key: config.key });
     const linkedin = config.linkedin ? createLinkedIn(config.linkedin) : null;
     const ga4 = config.ga4 ? (await import("./ga4.js")).createGa4(config.ga4) : null;
-    const server = createApp({ config, store, linkedin, ga4 });
+    const gsc = config.gsc ? (await import("./gsc.js")).createGsc(config.gsc) : null;
+    const server = createApp({ config, store, linkedin, ga4, gsc });
     server.on("error", () => {
       console.error("The server could not listen on the configured address.");
       store.close();
